@@ -1,89 +1,67 @@
 # Soft Room
 
-一个基于 **Logos Messaging（原 Waku）** 的本地小聊天室。Vite + 原生 TypeScript + CSS，加一个只传密文的本地 Waku 网关；无 React、账户系统或数据库。
+一个可直接部署到 Cloudflare Pages 的纯静态加密聊天室。Vanilla TypeScript + Vite，无运行时 Node 后端。两套新拟物皮肤，中英文、桌面折叠侧栏和手机抽屉。界面图标优先使用 Lucide。
 
-## 开始玩
+## 本地运行与部署
 
-要求 Node.js 22.18+（本机使用 24.10.0）。
-
-```bash
-cd ~/waku/soft-room
+```sh
 npm ci
-npm run dev
+npm run build
+npm run preview
 ```
 
-打开终端打印的 **Network HTTPS 地址**，例如 `https://192.168.2.112:5173/`。桌面与手机都用这个地址，避免从 localhost 复制出其他设备无法访问的链接。IP 可能随 Wi-Fi 改变。
+`npm run preview` 用 HTTPS 静态服务器在 `0.0.0.0:5173` 提供 **dist 中的文件**，没有 HMR、API、WebSocket 代理或本地广播。现有开发证书放在 `.certs/`，不提交、不进入 dist；首次本地开发可运行 `npm run dev` 生成证书。手机使用 `https://192.168.2.112:5173/`，按浏览器提示信任开发证书。IP 不同需调整本地证书 SAN。每次修改源码后重新构建再刷新。
 
-1. 第一次访问会提示本地自签名证书，允许访问这个本机地址。此证书仅供局域网调试，不自动安装到系统信任库。
-2. 首次打开生成临时 Ed25519 身份，同一标签页刷新会恢复身份与房间。新建房间默认开启阅读与每日发言 PoW，也可关闭。
-3. 点击「复制邀请链接」，私下发给同一局域网的朋友。也可把 `sr1.` 开头的邀请码粘到加入框。
-4. PoW 在后台 Worker 计算，显示耗时与等待动画，可随时取消。解锁房间后即可阅读，发言验证完成后才能发送文字。取消发言计算仍可阅读，也可点击继续验证。Enter 发送，Shift+Enter 换行。
-5. 房间标题下可设置独立昵称，随该房间缓存，从下一条消息开始向其他成员显示。留空使用默认身份名称；消息仍附身份短码，昵称不影响身份或入场凭证。
-6. 「我的房间」可以重新进入、复制邀请或移除本地房间；语言菜单支持中文 / English，即时切换，不中断计算或聊天。
+Cloudflare Pages 上传 `dist` 即可，或设置构建命令 `npm run build`、输出目录 `dist`。不需要 Pages Functions、Worker、数据库、后端环境变量或常驻个人电脑。静态预览脚本仅用于本地服务文件，部署时不上传/运行。
 
-电脑需要保持运行；手机和电脑处于能互访的网络，防火墙允许 5173 端口。App 在本机托管，默认仍需要互联网连接官方 Waku 节点，不是离线局域网聊天。
+## 浏览器接入 Waku
 
-## 网络与开发代理
-
-当前环境直连官方节点 8000 端口超时，经本机已有 HTTP 代理可以连接。默认由一个随 Vite 启动的轻量、无状态网关连接官方 Waku 网络：
-
-```
-浏览器（临时身份、房间密钥、签名、加密、PoW）
-  → 本机 HTTPS / WebSocket 网关（密文 + content topic）
-  → 官方 Waku 节点（LightPush / Filter）
-  → 网关的另一个独立 Waku 客户端 → 另一浏览器解密
+```text
+浏览器：临时身份、PoW、签名、加密、Waku SDK
+  ↕ 公共 WSS（DNS 发现 + Peer Exchange）
+Waku 公共服务节点：LightPush / Filter
 ```
 
-网关代码在 `server/gateway.ts`，每个浏览器对应一个真正的 Waku light client。网关不持有房间钥匙，不建房、不保存消息，也不在本地广播消息：客户端收到的密文来自官方 Filter 回调。临时身份签名与密钥始终由浏览器掌握。网关能观察连接、主题和消息长度等元数据。
+`src/transport.ts` 在浏览器直接创建 @waku/sdk 轻节点，SDK 默认仅连接安全 WebSocket，最多选择两个合适服务节点。保留既有 room content topic 和网络配置，发送密文使用 LightPush、接收使用 Filter，不查询 Store。SDK 维护节点发现、连接与订阅，应用在断开后重试房间订阅。切换房间或离开时停止旧轻节点。发送失败保留文字，节点确认不等于所有成员已收到。浏览器所处网络必须能够访问公共节点和 DNS-over-HTTPS，本站不再为手机提供代理。
 
-网关通过官方 DNS 自动发现节点，复用启动环境中的 `https_proxy` / `HTTPS_PROXY`；若当前没有配置代理，则尝试直连。手机无需单独配置代理。`npm run preview` 也包含相同网关，不能把 dist 放到普通静态服务器后就期待它自己完成收发。
+旧 `/waku-api` 和 `/access/check` 已删除。开发与生产都使用相同浏览器传输代码。SDK 主应用包约 913 KB（gzip 284 KB），入口检查通过后才加载；不使用 CDN 脚本。
 
-这是本地玩具，网关同时允许最多 12 个浏览器连接；没有账号、数据库或房间目录。电脑仍需联网，这不是离线 LAN 聊天。如果要换端口，修改 `vite.config.ts`；各设备重新用新地址打开即可。
+## 入口检查与地区
 
-## 最小协议
+`src/entry.ts` 先识别设备与浏览器。根据 `navigator.languages` 选择中文/英文，已手动选择的会话语言优先。拒绝微信、抖音、QQ、支付宝等已知内置浏览器，提供复制链接和外部打开指引。Android 可尝试浏览器 Intent；宿主 App 可能禁止跳转，iOS 使用菜单或复制打开。
 
-- 身份：首次生成随机 Ed25519 密钥；身份私钥、房间密钥、房间列表、完成的 PoW 凭证、语言和当前房间保存到本标签页 sessionStorage。恢复时从私钥重算公钥，并重新验证缓存的 PoW。昵称取公钥前 8 个十六进制字符，签名验证完整公钥。
-- 邀请：新 PoW 房间使用 `sr2.` + base64url JSON，只含版本、256 位随机 seed、房间名和 PoW 设置，不含派生密钥。无 PoW 和旧房间继续使用 `sr1.`，其中包含密钥。链接使用 URL fragment，解析后从地址栏清除。
-- 房间主题：v2 对版本、seed、名称和 PoW 设置做 SHA-256 承诺；v1 对密钥、名称和 PoW 设置做承诺。派生密钥前后 topic 不变；修改参数会产生不同房间。
-- 加密：XChaCha20-Poly1305，每条随机 24 字节 nonce，以 content topic 作关联数据。明文正文先经 Ed25519 签名，再整体加密。邀请码持有人才有解密钥匙。
-- Read PoW：将 seed 解码成 32 字节，顺序做恰好 1,000,000 次 SHA-256，最后 32 字节作为房间密钥。创建者与加入者使用同一算法，在 Worker 内计算。完成的密钥随本标签页会话缓存，刷新不必重算。
-- Write PoW：SHA-256 前 48 位小于 `floor(2^48 / 1,000,000)`，平均约一百万次尝试。前缀绑定 v2 房间 ID、完整公钥、UTC 自然日 epoch。消息的 epoch 随正文签名加密；接收端要求 epoch 同时等于接收当天和消息时间所属日期，并验证 nonce。每日 UTC 00:00（北京时间 08:00）更新；旧证明不能用于新收到的消息，跨日延迟到达的旧消息也会被拒绝，已显示消息不删除。
-- 状态：Read PoW 完成后订阅 Waku，随后自动计算 Write PoW。写入计算、取消或跨日更新期间可读不可写；计算跨日时继续计算新一天的证明。每秒、页面重新可见和窗口聚焦时检查日期，发送前再检查一次。
-- 兼容：旧 `sr1` 房间保持原密钥、主题和一次性 PoW，不做静默迁移。新机制只用于新建 `sr2` PoW 房间。
-- 昵称：每个房间独立设置，最多 24 个 UTF-16 单元，去除首尾空白，拒绝控制字符。昵称随消息一同签名和加密；旧消息缺少昵称时显示身份名称。改名只影响之后发送的消息，不需要重算 PoW。
-- 消息：最多 2,000 字符，接收端拒绝超过 16 KB 的密文、无效签名/工作量以及与本机时间相差超过 5 分钟的消息。近期 ID 去重，界面最多保留 300 条。设备需正常校时。
-- SDK（网关侧）：安装并核对 `@waku/sdk` 0.0.36 的实际 API，使用 `node.createEncoder/createDecoder`、`filter.subscribe`、`lightPush.send`；锁文件固定安装结果。
+`localhost`、`127.0.0.1`、`192.168.x.x` 跳过地区查询。其他地址从 **本站 `/cdn-cgi/trace`** 读取 Cloudflare 提供的 `ip` 和 `loc`，`CN/HK/MO` 显示不提供服务。该路径由 Cloudflare 自动提供，不是项目后端，不需要付费 API 或密钥。只使用访问者地区 `loc`，不使用边缘节点 `colo`。请求不带邀请码、聊天数据或 cookies。解析失败/不可用时显示重试，不视为通过。
 
-## 会话缓存与房间管理
+地区检测针对 Cloudflare Pages/经 Cloudflare 代理的域名；若搬到其他静态托管平台，需要更换地区查询来源。没有 country.is 外部查询或本机 GeoIP 数据库。浏览器 UA 可伪装、IP 可受代理/VPN 影响，属于页面入口检查，不是网络层不可绕过的访问控制。
 
-使用 sessionStorage，不使用 localStorage 或数据库保存身份/房间。刷新恢复原身份、房间、凭证和语言；切换房间会停止旧连接与计算，完成的凭证继续保留。最多保存 100 个房间。移除只删除本标签页缓存，不解散远端房间；清除会话会停止连接/Worker、删除房间和凭证，并生成新身份。消息仅保存在页面内存中。
+参考：[Cloudflare /cdn-cgi/](https://developers.cloudflare.com/fundamentals/reference/cdn-cgi-endpoint/)。
 
-关闭标签页或重启浏览器可能丢失这些信息，请自行保存邀请链接。[浏览器会话恢复可能保留 sessionStorage](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage)，因此页面不能诚实地保证「重启必定删除」。提供「清除会话」用于立即清除本标签页；其他标签页独立。顶部、身份提示、房间管理区、复制邀请反馈和 PoW 等待区都有生命周期提醒。缓存被浏览器禁用或写入失败时，提示仅保存在内存、刷新即丢失。
+## 房间与密码学
 
-## 玩具边界
+- 身份使用随机 Ed25519 密钥；完整公钥作为身份，名称只用于展示。
+- 消息用房间密钥做 XChaCha20-Poly1305 加密，签名、名称、nonce 和 epoch 都在密文内。校验签名和 PoW 后才接收。限制消息 2000 字符、密文 16000 字节、正常消息时间差 5 分钟。
+- 新 PoW 房间使用 `sr2.` base64url 邀请，只携带 seed、名称和版本参数。Read PoW 为 seed 的 32 字节连续做恰好一百万次 SHA-256，结果作为房间密钥。创建者与加入者都在 Worker 中执行。
+- Write PoW 绑定房间、公钥和 UTC 自然日；SHA-256 前 48 位小于 `floor(2^48 / 1,000,000)`，平均一百万次尝试。接收端要求消息 epoch 等于接收当天和消息时间所属日期。
+- 每天 UTC 00:00（北京时间 08:00）更新发言证明，跨日延迟到达的旧消息被拒绝，已显示消息不删除。Read PoW 结果随本标签页缓存，不必每天重算。等待发言证明期间可读，可取消再继续。
+- 无 PoW 及旧 `sr1` 邀请保持原协议，旧房间不做静默迁移。持有派生密钥的成员可以分享密钥绕开 Read PoW。Write PoW 是每身份每日成本，不是逐消息限速，也不减轻所有网络层负担。
 
-仅接收当前在线时的消息；不查询 Store、不恢复历史，刷新保留本标签页的身份与房间，但丢失页面消息记录。消息设置 ephemeral，但无法强迫外部节点或参与者删除副本。发送成功只表示 LightPush 节点确认接收，不等于所有成员已读。失败时保留文字供重试，网络超时下重试可能产生重复内容。
+## 名称、心跳与页面记忆
 
-持有新邀请码可通过阅读计算获得密钥；已有成员可直接转发派生密钥，绕开 Read PoW。Write PoW 每身份每天付出一次成本，不是逐条消息限速；接收端过滤仍消耗带宽、解密与验证成本。没有踢人、密钥轮换、前向保密、加入前历史隔离、房主特权或持久身份。不是官方 RLN。传输节点仍能观察连接/主题等元数据。本机提供的页面代码需要被信任。
+全局名称在“我的身份”中设置；房间昵称在当前房间身份卡设置，优先于全局名称。消息/心跳中的 nickname 声明当前有效名称。按完整公钥跟踪：首次看到不提示，之后名称变化显示一行提示。早于已知名称的旧消息不触发倒退改名。
+
+发言证明有效时每约 5 秒发送隐藏心跳，带最新名称，仍需通过签名、加密和 PoW 检查。30 秒没有新心跳标记离线；潜水、不发心跳或被浏览器暂停时，通过下一次发言仍可更新名称。成员列表仅显示本页面见过的人、完整公钥及在线/离线状态，没有持久成员名册。
+
+身份私钥、全局名称、房间信息/密钥、证明、语言和皮肤保存在本标签页 sessionStorage。刷新保留这些数据，清空聊天、名称跟踪和成员记忆。关闭标签页或重启浏览器可能丢失；浏览器会话恢复也可能保留。提供清除按钮。最多保存 100 个房间，每房间最多显示 300 条记录并记住最近 2000 个消息 ID。
+
+没有历史恢复、房主特权、踢人、前向保密或密钥轮换。消息标记 ephemeral 不能强迫其他参与者删除副本。
 
 ## 验证
 
-```bash
-npm run build             # TypeScript + production build，包括 Worker
-npm test                  # 协议、缓存、中英文与打包后 Worker 求解/取消测试
-NODE_USE_ENV_PROXY=1 npm run test:network   # 两个真实 SDK 客户端，通过公共网络
-# 先启动 npm run dev；使用本地开发证书，双向测试实际 HTTPS 网关、Waku、加密与 PoW
+```sh
+npm run build
+npm test
+# 先运行 npm run preview，需本机安装 Chrome，或指定 BROWSER_PATH
 npm run test:lan
 ```
 
-网络测试仅发送测试消息。PoW 测试使用公开、确定性的测试身份与房间 fixture，不可用于真实聊天；此凭证已通过实际搜索得到，避免每次网络检查重新随机耗费数分钟。`test:lan` 创建两个独立 HTTPS 客户端，双向发送，收到后校验签名、密钥和 PoW。实体手机/桌面浏览器之间的人工联调仍需按上面的步骤操作；没有把 SDK 测试冒充实体设备验证。
-
-## 官方实现简析
-
-[Logos Messaging](https://docs.logos.co/messaging) 把 Delivery 传输和 Chat 群聊库分开。Delivery 提供 Relay、Filter、LightPush、Store；[官方 Chat](https://github.com/logos-messaging/logos-chat-nim) 使用 de-MLS 做群组加密，解决更完整的群组状态问题。
-
-[官方 JS 示例](https://github.com/logos-messaging/examples.waku.org) 展示 LightPush/Filter、Store 及与以太坊地址相关的加密私聊；该示例仓库已归档。这里参考传输层分工，不搬钱包、完整群组协议或历史存储。需求是「有邀请码就能进」的小应用，使用每房共享秘密更直接。
-
-[JS SDK 源码](https://github.com/logos-messaging/logos-delivery-js) 与 [收发教程](https://docs.waku.org/build/javascript/light-send-receive/) 有 API 版本差异，以已安装类型和真实收发测试为准。[官方本地节点方案](https://docs.waku.org/build/javascript/local-dev-env) 使用 Docker 的 `@waku/run`；本次不引入 Docker/数据库。
-
-新双阶段 PoW 的实际网络验证：`TEST_DAILY_POW=1 npm run test:lan`。测试现场派生阅读密钥并计算当天发言证明。
+`test:lan` 使用两个独立 Chrome 会话加载静态站点，实际执行 Read/Write PoW，双向 Waku 消息、心跳改名、离线超时和自动重连，并断言没有本机 API/WebSocket 请求。它是桌面浏览器自动测试，不等于实体手机网络测试。
