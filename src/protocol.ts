@@ -6,7 +6,7 @@ const utf8 = new TextEncoder();
 const text = new TextDecoder('utf-8', { fatal: true });
 export type Room = { v: 1 | 2; key: string; seed?: string; name: string; pow: 0 | 16 | 20 | 1000 };
 export type Identity = { secret: Uint8Array; publicKey: string };
-export type Message = { v: 1; room: string; id: string; sender: string; nonce: number; epoch?: number; time: number; text: string; nickname?: string };
+export type Message = { v: 1; room: string; id: string; sender: string; nonce: number; kind?: 'heartbeat'; epoch?: number; time: number; text: string; nickname?: string };
 export const makeIdentity = (): Identity => { const secret = randomBytes(32); return { secret, publicKey: bytesToHex(ed25519.getPublicKey(secret)) }; };
 export const shortName = (key: string) => `旅人 ${key.slice(0, 8)}`;
 export function makeRoom(name: string, pow: boolean): Room { return { v: pow ? 2 : 1, key: pow ? '' : bytesToHex(randomBytes(32)), ...(pow ? {seed:bytesToHex(randomBytes(32))} : {}), name: name.trim().slice(0, 32) || '随便聊聊', pow: pow ? 20 : 0 }; }
@@ -78,9 +78,9 @@ export function normalizeNickname(value:string):string {
   if(name.length>24 || /[\u0000-\u001f\u007f]/.test(name))throw Error('Invalid nickname');
   return name;
 }
-export function seal(r: Room, identity: Identity, nonce: number, body: string, nickname = '', epoch=dayEpoch()): { message: Message; payload: Uint8Array } {
-  if (!body.trim() || body.length > 2000) throw Error('消息需为 1–2000 个字符。');
-  const message: Message = {v:1,room:roomId(r),id:bytesToHex(randomBytes(16)),sender:identity.publicKey,nonce,time:Date.now(),text:body.trim()};
+export function seal(r: Room, identity: Identity, nonce: number, body: string, nickname = '', epoch=dayEpoch(),kind?:'heartbeat'): { message: Message; payload: Uint8Array } {
+  if ((kind!=='heartbeat'&&!body.trim()) || body.length > 2000) throw Error('消息需为 1–2000 个字符。');
+  const message: Message = {v:1,room:roomId(r),id:bytesToHex(randomBytes(16)),sender:identity.publicKey,nonce,time:Date.now(),text:kind==='heartbeat'?'':body.trim(),...(kind?{kind}:{})};
   if(r.v===2){if(epoch!==dayEpoch() || !validWork(r,identity.publicKey,nonce,epoch))throw Error('Invalid work');message.epoch=epoch;}
   const name=normalizeNickname(nickname);if(name)message.nickname=name;
   const signed = JSON.stringify(message);
@@ -96,7 +96,9 @@ export function open(r: Room, payload: Uint8Array, now = Date.now()): Message {
   const envelope = JSON.parse(text.decode(plain));
   if (typeof envelope.body !== 'string' || !/^[a-f0-9]{128}$/.test(envelope.signature)) throw Error('Invalid envelope');
   const m = JSON.parse(envelope.body) as Message;
-  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || !m.text.trim() || m.text.length > 2000 || !Number.isSafeInteger(m.time) || Math.abs(now-m.time) > 300000) throw Error('Invalid message');
+  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || (m.kind!=='heartbeat'&&!m.text.trim()) || m.text.length > 2000 || !Number.isSafeInteger(m.time) || Math.abs(now-m.time) > 300000) throw Error('Invalid message');
+  if(m.kind!==undefined&&m.kind!=='heartbeat')throw Error('Invalid kind');
+  if(m.kind==='heartbeat'&&(m.text!==''||now-m.time>=30000||m.time-now>5000))throw Error('Invalid heartbeat');
   if(m.nickname!==undefined && (typeof m.nickname!=='string'||!m.nickname||normalizeNickname(m.nickname)!==m.nickname))throw Error('Invalid nickname');
   if (!ed25519.verify(hexToBytes(envelope.signature),utf8.encode(envelope.body),hexToBytes(m.sender))) throw Error('Invalid signature');
   if(r.v===2 && (m.epoch!==dayEpoch(now) || m.epoch!==dayEpoch(m.time)))throw Error('Expired epoch');
