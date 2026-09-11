@@ -1,0 +1,42 @@
+import {chromium} from 'playwright-core';
+import {build} from 'vite';
+import assert from 'node:assert/strict';
+const result=await build({configFile:false,logLevel:'error',build:{write:false,lib:{entry:'tests/history-harness.ts',formats:['es']}}});
+const code=(Array.isArray(result)?result[0]:result).output.find(x=>x.type==='chunk').code;
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+ const page=await browser.newPage({ignoreHTTPSErrors:true,viewport:{width:390,height:844}});
+ await page.route('**/history-test',r=>r.fulfill({contentType:'text/html',body:'<div id="log" style="height:300px;overflow:auto;overflow-anchor:none"></div>'}));
+ await page.route('**/history-harness.js',r=>r.fulfill({contentType:'text/javascript',body:code}));
+ await page.goto('https://127.0.0.1:5173/history-test');
+ const scroll=await page.evaluate(async()=>{
+ const {preserveScroll}=await import('/history-harness.js'),log=document.querySelector('#log');
+ const row=i=>{const el=document.createElement('div');el.dataset.message=String(i);el.textContent='Message '+i;el.style.height='50px';return el;};
+ for(let i=0;i<30;i++)log.append(row(i));log.scrollTop=520;
+ const offset=()=>log.querySelector('[data-message="11"]').getBoundingClientRect().top;
+ const before=offset(),restore=preserveScroll(log);for(let i=-1;i>=-20;i--)log.prepend(row(i));restore();const after=offset();
+ const keep=preserveScroll(log);log.append(row(31));keep();const incoming=offset();
+ log.scrollTop=log.scrollHeight;const follow=preserveScroll(log);log.append(row(32));follow();
+ return {before,after,incoming,bottom:log.scrollHeight-log.clientHeight-log.scrollTop};
+ });assert.equal(scroll.before,scroll.after);assert.equal(scroll.before,scroll.incoming);assert.equal(scroll.bottom,0);console.log('SCROLL_ANCHOR_AND_BOTTOM_PASS');
+ await page.evaluate(async()=>{const lib=await import('/history-harness.js');window.lib=lib;window.room=lib.makeRoom('store-'+Date.now(),false);window.transport=await lib.connect(window.room,()=>{});const identity=lib.makeIdentity(),old=lib.seal(window.room,identity,0,'earlier message','Earlier name');await new Promise(r=>setTimeout(r,10));window.packet=lib.seal(window.room,identity,0,'recover me','Latest name');await window.transport.send(window.packet.payload,true);await window.transport.send(old.payload,true);});
+ await page.waitForTimeout(5000);
+ const recovered=await page.evaluate(async()=>{const {lib,room,packet}=window;await window.transport.stop();window.transport=await lib.connect(room,()=>{});let found=false;await window.transport.history(payloads=>{for(const p of payloads){try{if(lib.openHistory(room,p).id===packet.message.id)found=true;}catch{}}});await window.transport.stop();return found;});
+ assert.ok(recovered,'Fresh connection must retrieve previously sent encrypted text');console.log('REAL_STORE_RECOVERY_PASS');
+ const archivedKey=await page.evaluate(()=>window.packet.message.sender);
+ const invitation=await page.evaluate(()=>window.lib.invite(window.room));
+ await page.goto('https://127.0.0.1:5173/#'+invitation);await page.locator('#join-button').click();
+ await page.waitForFunction(()=>!document.querySelector('#send')?.disabled,null,{timeout:90000});
+ await page.waitForFunction(()=>document.querySelector('#messages')?.textContent.includes('recover me'),null,{timeout:60000});
+ await page.locator('#message').fill('typing while history loads');
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.reload();
+ await page.waitForFunction(()=>document.querySelector('#messages')?.textContent.includes('recover me'),null,{timeout:90000});
+ console.log('MOBILE_STATIC_UI_AND_REFRESH_RECOVERY_PASS');
+ await page.locator('#room-members').click();
+ const member=page.locator('.member-card').filter({hasText:archivedKey});await member.waitFor();
+ assert.equal(await member.locator('b').textContent(),'Latest name');
+ assert.equal(await member.locator('code').textContent(),archivedKey);
+ assert.equal(await member.locator('.member-status.online').count(),0);
+ console.log('HISTORICAL_MEMBER_LATEST_SIGNED_NAME_AND_OFFLINE_PASS');
+}finally{await browser.close();}

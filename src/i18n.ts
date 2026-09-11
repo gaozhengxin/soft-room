@@ -33,7 +33,7 @@ export const zh = {
  reading:'正在解锁房间',
  skin:'皮肤',skinSoft:'柔绿',skinKabutack:'卡布达',skinSssp:'科学特搜队',patrolTagline:'科学特搜队 / SSSP 通信终端',patrolEyebrow:'SSSP · 通信频道',patrolEmpty:'科学特搜队，等待呼叫。',home:'Soft Room 首页', tagline:'LOGOS MESSAGING / 小小聊天室', temporaryIdentity:'临时身份', language:'界面语言',
  sessionWarning:'你的身份是临时的。关闭标签页或重启浏览器，身份和房间信息可能丢失。',
- sessionDetail:'身份、名称、房间和凭证仅保存在当前标签页。刷新会保留这些信息，但会清空聊天记录；关闭标签页或重启浏览器可能丢失。请保存邀请链接。',
+ sessionDetail:'身份、名称、房间和凭证仅保存在当前标签页。刷新会保留这些信息，并重新加载可用的聊天记录；关闭标签页或重启浏览器可能丢失。请保存邀请链接。',
  cacheFailed:'暂时无法保存信息。你的身份是临时的，刷新页面就会丢失身份和房间。',
  clearSession:'清除会话', clearConfirm:'清除这个标签页的身份、房间和入场凭证？当前聊天也会清空。此操作不可恢复，请先保存邀请码。',
  eyebrow:'给聊天留一点空间', heading:'开个房间，随便聊聊。', intro:'不用注册，把邀请码给朋友就能进来。',
@@ -52,7 +52,7 @@ export const zh = {
  emptyPill:'临时身份 · 房间加密 · 无需许可', messages:'聊天消息', messageLabel:'文字消息', messagePlaceholder:'说点什么…', messageDisabled:'进入房间后再说点什么…',
  send:'发送消息', encrypted:'◈ 房间内加密', keyboard:'Enter 发送 · Shift + Enter 换行', footer:'一点隐私，一点自由，一点好玩。', footerMark:'SOFT ROOM / 随便聊聊',
  nickname:'房间内昵称',nicknamePlaceholder:'留空使用全局名称',nicknameSave:'保存昵称',nicknameHint:'只用于这个房间，从下一条消息生效。关闭浏览器后可能丢失。',nicknameSaved:'房间昵称已保存。',nicknameInvalid:'昵称最多 24 个字符，不能包含换行或控制字符。',visitor:'旅人 {id}', you:'你', inviteInvalid:'邀请码无效或不完整，请粘贴完整的邀请码或邀请链接。',
- waitingNetwork:'正在连接 Logos 消息网络。', readyNotice:'可以聊天了。你只能收到在线期间的消息。',
+ waitingNetwork:'正在连接 Logos 消息网络。', readyNotice:'可以聊天了。',
  connectionFailed:'连接没有成功。点「重新连接」重试，并检查本机网络。', left:'已离开，可从「我的房间」重新进入。',
  copied:'邀请链接已复制，请妥善保存并私下分享。', copyFallback:'请复制下面的邀请链接。',
  sent:'消息已发出，尚未确认对方收到。', sendFailed:'发送未确认，文字已保留。可重试；上一条也可能已到达。',
@@ -61,7 +61,7 @@ export const zh = {
  powLegacyDescription:'请稍候，完成后会自动进入房间。', attempts:'已尝试', elapsed:'已耗时', speed:'次 / 秒', seconds:'秒',
  powTiming:'所需时间不固定，你可以随时取消，稍后再试。',
  powCache:'完成后，在当前标签页再次进入无需重复验证。', cancel:'取消计算',
- sessionCleared:'已清除原有身份和房间，并生成新的临时身份。', historyHint:'消息仅在当前页面保留，刷新后清空。',
+ sessionCleared:'已清除原有身份和房间，并生成新的临时身份。', historyLoading:'正在加载聊天记录…',historyFailed:'暂时无法加载聊天记录，仍可继续聊天。',historyHint:'进入房间会尝试找回最近 7 天的聊天记录，最多显示 1,000 条。记录可能不完整，请自行保存重要内容。',
  } as const;
 export type TextKey=keyof typeof zh;
 export const en:Record<TextKey,string> = {
@@ -98,7 +98,7 @@ export const en:Record<TextKey,string> = {
  reading:'Unlocking room',
  skin:'Appearance',skinSoft:'Sage',skinKabutack:'Kabutack',skinSssp:'Science Patrol',patrolTagline:'SCIENCE SPECIAL SEARCH PARTY / COMMS',patrolEyebrow:'SSSP · COMMUNICATIONS',patrolEmpty:'Science Patrol, standing by.',home:'Soft Room home',tagline:'LOGOS MESSAGING / A LITTLE CHAT ROOM',temporaryIdentity:'Temporary identity',language:'Language',
  sessionWarning:'Your identity is temporary. Closing this tab or restarting your browser may lose your identity and rooms.',
- sessionDetail:'Your identity, names, rooms and proofs are saved in this tab only. Refresh keeps them but clears messages; closing the tab or restarting your browser may lose them. Save your invitations.',
+ sessionDetail:'Your identity, names, rooms and proofs are saved in this tab only. Refresh keeps them and reloads available chat history; closing the tab or restarting your browser may lose them. Save your invitations.',
  cacheFailed:'Your information cannot be saved right now. Your identity is temporary; refreshing will lose your identity and rooms.',
  clearSession:'Clear session',clearConfirm:'Delete this tab’s identity, rooms and entry proofs? Current chats will also be cleared. This cannot be undone. Save your invitations first.',
  eyebrow:'A LITTLE SPACE TO TALK',heading:'Make a room. Make some conversation.',intro:'No account needed. Share an invitation and let your friends in.',
@@ -117,7 +117,7 @@ export const en:Record<TextKey,string> = {
  emptyPill:'Temporary identity · Encrypted rooms · No permission needed',messages:'Chat messages',messageLabel:'Text message',messagePlaceholder:'Say something…',messageDisabled:'Enter a room to start chatting…',
  send:'Send message',encrypted:'◈ Room encryption',keyboard:'Enter to send · Shift + Enter for a new line',footer:'A little privacy. A little freedom. A little fun.',footerMark:'SOFT ROOM / JUST CHATTING',
  nickname:'Nickname in this room',nicknamePlaceholder:'Leave blank to use your global name',nicknameSave:'Save nickname',nicknameHint:'Only for this room, starting with your next message. Closing your browser may lose it.',nicknameSaved:'Room nickname saved.',nicknameInvalid:'Use up to 24 characters, without line breaks or control characters.',visitor:'Traveler {id}',you:'You',inviteInvalid:'Invalid or incomplete invitation. Paste the full code or invitation link.',
- waitingNetwork:'Connecting to Logos Messaging.',readyNotice:'Ready to chat. You only receive messages while connected.',
+ waitingNetwork:'Connecting to Logos Messaging.',readyNotice:'Ready to chat.',
  connectionFailed:'Could not connect. Select Reconnect and check this computer’s network.',left:'You have left. Return from My rooms.',
  copied:'Invitation copied. Keep it safe and share it privately.',copyFallback:'Copy the invitation below.',
  sent:'Message sent. Delivery to others is not confirmed.',sendFailed:'Sending was not confirmed. Your text is kept for retry; the previous attempt may still arrive.',
@@ -126,7 +126,7 @@ export const en:Record<TextKey,string> = {
  powLegacyDescription:'Please wait. You will enter the room when the challenge is complete.',attempts:'Attempts',elapsed:'Elapsed',speed:'hashes / sec',seconds:'sec',
  powTiming:'The time needed varies. You can cancel and try again later.',
  powCache:'Once completed, you can re-enter from this tab without repeating the challenge.',cancel:'Cancel work',
- sessionCleared:'Your previous identity and rooms have been cleared. A new temporary identity is ready.',historyHint:'Messages stay on this page only and clear on refresh.',
+ sessionCleared:'Your previous identity and rooms have been cleared. A new temporary identity is ready.',historyLoading:'Loading chat history…',historyFailed:'History is unavailable. You can still chat.',historyHint:'We try to recover the last 7 days when you enter, showing up to 1,000 messages. History may be incomplete. Save anything important.',
 };
 export type Language='zh'|'en';
 export function translate(language:Language,key:TextKey,params:Record<string,string|number>={}):string{

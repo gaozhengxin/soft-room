@@ -1,3 +1,4 @@
+import {preserveScroll} from './scroll.ts';
 import {createIceProvider} from './ice.ts';
 import {keepMobileScreenOn} from './awake.ts';
 import {nativeApp,invitationLink} from './platform.ts';
@@ -13,7 +14,7 @@ import './sssp.css';
 import './layout.css';
 import './kabutack.css';
 import {effectiveName,type ChatEntry} from './names.ts';
-import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, type Room, type Message } from './protocol.ts';
+import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, openHistory, type Room, type Message } from './protocol.ts';
 import { computeReadKey, computeWork, type WorkProgress } from './pow.ts';
 import { loadSession, saveSession, freshSession, SESSION_KEY, type SavedRoom } from './session.ts';
 import { translate, type TextKey, type Language } from './i18n.ts';
@@ -27,6 +28,7 @@ let session=loaded.session,cacheFailed=loaded.failed;
 const iceProvider=createIceProvider(import.meta.env.VITE_TURN_CREDENTIALS_URL,fetch,Date.now,()=>session.identity,()=>meshPanel.render(),storage);
 session.theme ??= 'soft';
 const t=(key:TextKey,params:Record<string,string|number>={})=>translate(session.language,key,params);
+let historyState:'idle'|'loading'|'error'='idle';
 const histories=new Map<string,ChatEntry[]>();
 const membersByRoom=new Map<string,Map<string,Member>>();
 let heartbeatFlight:Promise<void>|undefined,lastHeartbeatAttempt=0;
@@ -52,6 +54,7 @@ $('app').innerHTML=`<div class="shell">
 <div id="room-tools" class="room-tools" hidden><button id="copy" data-i18n="copy"></button><button id="reconnect" data-i18n="retry"></button><button id="leave" data-i18n="leave" data-title="leaveTip"></button></div>
 <form id="nickname-form" class="nickname-form" hidden><label for="nickname" data-i18n="nickname"></label><div><input id="nickname" maxlength="24" autocomplete="off" data-placeholder="nicknamePlaceholder"/><button data-i18n="nicknameSave"></button></div><small data-i18n="nicknameHint"></small></form>
 <p id="legacy-hint" class="legacy-hint" data-i18n="legacyHint" hidden></p>
+<div id="history-status" class="history-status" role="status" hidden><i aria-hidden="true"></i><span></span><button id="history-retry" type="button" data-i18n="retry"></button></div>
 <div id="messages" class="messages" role="log" data-label="messages" aria-live="polite"></div>
 <section id="pow-wait" class="pow-wait" aria-busy="true" hidden><div class="pow-orbit" aria-hidden="true"><span>✳</span></div><h3 id="pow-title"></h3><p id="pow-description"></p><div class="pow-track" role="progressbar" data-label="powTitle"><i></i></div><div class="pow-stats"><div><b id="pow-time">0</b><small data-i18n="elapsed"></small></div></div><p class="pow-explanation" data-i18n="powTiming"></p><p class="footnote" id="pow-cache"></p><button id="cancel-work" data-i18n="cancel"></button></section>
 <button id="resume-work" data-i18n="resumeWork" hidden></button><div id="notice" class="notice" role="status" aria-live="polite"></div><form id="composer" class="composer"><label class="sr-only" for="message" data-i18n="messageLabel"></label><textarea id="message" rows="1" maxlength="2000" disabled></textarea><button id="send" class="send" disabled data-label="send">↑</button></form><div class="chat-foot"><span data-i18n="encrypted"></span><span data-i18n="keyboard"></span></div><p class="history-note" data-i18n="historyHint"></p>
@@ -218,18 +221,34 @@ function renderRooms(){
  }
 }
 function renderMessages(){
- const log=$('messages');log.replaceChildren();const messages=active?histories.get(roomId(active.room))||[]:[];
+ const log=$('messages'),restore=preserveScroll(log);log.replaceChildren();const messages=active?histories.get(roomId(active.room))||[]:[];
  if(!messages.length){const empty=document.createElement('div');empty.className='empty';empty.innerHTML='<div class="room-art"><span>✳</span><i></i><i></i></div><h3></h3><p></p><span class="pill"></span><div class="sssp-blueprint" aria-hidden="true"><img src="/sssp-vtol.svg" alt=""/><span>SSSP / VTOL–01</span></div>';empty.querySelector('h3')!.textContent=t(session.theme==='sssp'?'patrolEmpty':'emptyHeading');empty.querySelector('p')!.textContent=t(active?'emptyRoom':'emptyText');empty.querySelector('.pill')!.textContent=t('emptyPill');if(!active){const button=document.createElement('button');button.className='primary welcome-action';button.textContent=t('newRoom');button.onclick=openNew;empty.append(button);}log.append(empty);return;}
  for(const m of messages){
-  if(m.nameChange){const change=document.createElement('p');change.className='name-change';const fallback=t('visitor',{id:m.sender.slice(0,8)});change.textContent=t('nameChanged',{from:m.nameChange.from||fallback,to:m.nameChange.to||fallback,id:m.sender.slice(0,8)});log.append(change);}
+  if(m.nameChange){const change=document.createElement('p');change.className='name-change';change.dataset.message=m.id+'-name';const fallback=t('visitor',{id:m.sender.slice(0,8)});change.textContent=t('nameChanged',{from:m.nameChange.from||fallback,to:m.nameChange.to||fallback,id:m.sender.slice(0,8)});log.append(change);}
   if(m.kind==='heartbeat')continue;
-  const own=m.sender===session.identity.publicKey,row=document.createElement('article');row.className='message-row'+(own?' own':'');
+  const own=m.sender===session.identity.publicKey,row=document.createElement('article');row.className='message-row'+(own?' own':'');row.dataset.message=m.id;
   const meta=document.createElement('div');meta.className='meta';meta.textContent=`${m.nickname?m.nickname+' · '+m.sender.slice(0,8):t('visitor',{id:m.sender.slice(0,8)})}${own?' · '+t('you'):''}  ${new Date(m.time).toLocaleTimeString(session.language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'})}`;
   const bubble=document.createElement('p');bubble.textContent=m.text;row.append(meta,bubble);log.append(row);
  }
- log.scrollTop=log.scrollHeight;
+ restore();
+}
+function renderHistory(){const el=$('history-status');el.hidden=historyState==='idle';el.classList.toggle('loading',historyState==='loading');el.querySelector('span')!.textContent=t(historyState==='loading'?'historyLoading':'historyFailed');$('history-retry').hidden=historyState!=='error';}
+$('history-retry').onclick=()=>{if(active&&connection)void loadHistory(active,connection,generation);};
+async function loadHistory(saved:SavedRoom,transport:NonNullable<typeof connection>,current:number){
+ historyState='loading';renderHistory();
+ try{await transport.history(payloads=>{
+  if(current!==generation)return;
+  const id=roomId(saved.room),messages=histories.get(id)||[],known=new Set(messages.map(m=>m.id));
+  const members=membersByRoom.get(id)||new Map<string,Member>();
+  for(const payload of payloads){try{const m=openHistory(saved.room,payload);if(known.has(m.id))continue;known.add(m.id);messages.push(m);observeMember(members,m);}catch{ /* Historical text must authenticate independently of live freshness. */ }}
+  messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));
+  histories.set(id,messages.slice(-1000));membersByRoom.set(id,members);renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();
+ });if(current===generation)historyState='idle';}
+ catch{if(current===generation)historyState='error';}
+ finally{if(current===generation)renderHistory();}
 }
 function languageChanged(){
+ renderHistory();
  document.documentElement.dataset.theme=session.theme;
  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',session.theme==='sssp'?'#e0e4e7':session.theme==='kabutack'?'#eee9e2':'#e7ebe7');
  document.documentElement.lang=session.language==='zh'?'zh-CN':'en';document.title=session.language==='zh'?'Soft Room · 随便聊聊':'Soft Room · Just chatting';
@@ -245,6 +264,7 @@ function remember(room:Room,created=false):SavedRoom|undefined{
  const saved:SavedRoom={room,created};session.rooms.unshift(saved);save();renderRooms();return saved;
 }
 async function disconnect(){
+ historyState='idle';renderHistory();
  meshPanel.reset();
  mesh?.leave();mesh?.stop();mesh=undefined;
  generation++;lastHeartbeatAttempt=0;heartbeatFlight=undefined;writeController?.abort();writeController=undefined;writeBusy=false;writePaused=false;controller?.abort();controller=undefined;const old=connection;connection=undefined;active=undefined;busy=false;sending=false;session.activeId=undefined;statusKey='idle';
@@ -289,14 +309,14 @@ async function enter(saved:SavedRoom){
    if(current!==generation)return;
    try{const m=open(saved.room,payload);addMessage(saved,m);}catch{ /* Reject invalid ciphertext, signatures, work and epochs. */ }
   },signal);
-  if(current!==generation){await next.stop();return;}connection=next;statusKey='connected';notice('readyNotice');
+  if(current!==generation){await next.stop();return;}connection=next;statusKey='connected';notice('readyNotice');void loadHistory(saved,next,current);
   if(!saved.room.pow)saved.nonce=0;
  }catch(error){if(current!==generation)return;statusKey='error';notice(error instanceof Error&&error.message==='workerFailed'?'workerFailed':'connectionFailed');}
  finally{if(current===generation){busy=false;controls();renderRooms();void prepareWrite();void sendHeartbeat();}}
 }
 function addMessage(saved:SavedRoom,m:Message){
  const id=roomId(saved.room),messages=histories.get(id)||[];
- const seen=seenIds.get(id)||new Set<string>();if(seen.has(m.id))return;seen.add(m.id);if(seen.size>2000)seen.delete(seen.values().next().value!);seenIds.set(id,seen);if(active&&id===roomId(active.room))mesh?.receive(m);if(m.kind==='mesh')return;const members=membersByRoom.get(id)||new Map<string,Member>();const entry=observeMember(members,m);membersByRoom.set(id,members);if(m.kind!=='heartbeat'||entry.nameChange){messages.push(entry);if(messages.length>300)messages.shift();histories.set(id,messages);}
+ const seen=seenIds.get(id)||new Set<string>();if(seen.has(m.id)||messages.some(item=>item.id===m.id))return;seen.add(m.id);if(seen.size>2000)seen.delete(seen.values().next().value!);seenIds.set(id,seen);if(active&&id===roomId(active.room))mesh?.receive(m);if(m.kind==='mesh')return;const members=membersByRoom.get(id)||new Map<string,Member>();const entry=observeMember(members,m);membersByRoom.set(id,members);if(m.kind!=='heartbeat'||entry.nameChange){messages.push(entry);messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));if(messages.length>1000)messages.shift();histories.set(id,messages);}
  if(active&&id===roomId(active.room)){if(m.kind!=='heartbeat'||entry.nameChange)renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();}
 }
 async function copyInvitation(room:Room){
@@ -326,7 +346,7 @@ $('composer').addEventListener('submit',async event=>{
  event.preventDefault();const input=$<HTMLTextAreaElement>('message');if(!active||!connection||sending||!input.value.trim())return;
  if(!canWrite(active)){writePaused=false;void prepareWrite();return;}
  const current=generation,saved=active,body=input.value;sending=true;controls();
- try{await heartbeatFlight;if(current!==generation)return;const packet=seal(saved.room,session.identity,saved.nonce!,body,effectiveName(session.name,saved.nickname),saved.epoch);await connection.send(packet.payload);if(current!==generation)return;addMessage(saved,packet.message);if(input.value===body)input.value='';notice('sent');}
+ try{await heartbeatFlight;if(current!==generation)return;const packet=seal(saved.room,session.identity,saved.nonce!,body,effectiveName(session.name,saved.nickname),saved.epoch);await connection.send(packet.payload,true);if(current!==generation)return;addMessage(saved,packet.message);if(input.value===body)input.value='';notice('sent');}
  catch{if(current===generation)notice('sendFailed');}finally{if(current===generation){sending=false;controls();input.focus();}}
 });
 $('message').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();$<HTMLFormElement>('composer').requestSubmit();}});

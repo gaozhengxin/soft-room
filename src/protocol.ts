@@ -94,20 +94,23 @@ export function seal(r: Room, identity: Identity, nonce: number, body: string, n
   if(payload.length>16000)throw Error('Payload too large');
   return {message,payload};
 }
-export function open(r: Room, payload: Uint8Array, now = Date.now()): Message {
+export const HISTORY_WINDOW=7*86_400_000;
+export function openHistory(r:Room,payload:Uint8Array,now=Date.now()){return decodeMessage(r,payload,now,true);}
+export function open(r:Room,payload:Uint8Array,now=Date.now()){return decodeMessage(r,payload,now,false);}
+function decodeMessage(r: Room, payload: Uint8Array, now: number, historical:boolean): Message {
   if (payload.length < 40 || payload.length > 16000) throw Error('Invalid payload');
   const plain = xchacha20poly1305(hexToBytes(r.key),payload.slice(0,24),utf8.encode(topic(r))).decrypt(payload.slice(24));
   const envelope = JSON.parse(text.decode(plain));
   if (typeof envelope.body !== 'string' || !/^[a-f0-9]{128}$/.test(envelope.signature)) throw Error('Invalid envelope');
   const m = JSON.parse(envelope.body) as Message;
-  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || (m.kind!=='heartbeat'&&!m.text.trim()) || m.text.length > (m.kind==='mesh'?12000:2000) || !Number.isSafeInteger(m.time) || Math.abs(now-m.time)>300000) throw Error('Invalid message');
+  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || (m.kind!=='heartbeat'&&!m.text.trim()) || m.text.length > (m.kind==='mesh'?12000:2000) || !Number.isSafeInteger(m.time) || (historical ? now-m.time>HISTORY_WINDOW || m.time-now>5000 || m.kind!==undefined : Math.abs(now-m.time)>300000)) throw Error('Invalid message');
   if(m.kind!==undefined&&m.kind!=='heartbeat'&&m.kind!=='mesh')throw Error('Invalid kind');
   if(m.kind==='heartbeat'&&(m.text!==''||now-m.time>=30000||m.time-now>5000))throw Error('Invalid heartbeat');
   if(m.mesh!==undefined&&(m.kind!=='heartbeat'||(m.mesh!==null&&!validMembership(m.mesh,m.room))))throw Error('Invalid membership');
   if(m.kind==='mesh'){if(now-m.time>=30000||m.time-now>5000)throw Error('Expired mesh signal');parseSignal(m.text);}
   if(m.nickname!==undefined && (typeof m.nickname!=='string'||!m.nickname||normalizeNickname(m.nickname)!==m.nickname))throw Error('Invalid nickname');
   if (!ed25519.verify(hexToBytes(envelope.signature),utf8.encode(envelope.body),hexToBytes(m.sender))) throw Error('Invalid signature');
-  if(r.v===2 && (m.epoch!==dayEpoch(now) || m.epoch!==dayEpoch(m.time)))throw Error('Expired epoch');
+  if(r.v===2 && ((!historical && m.epoch!==dayEpoch(now)) || m.epoch!==dayEpoch(m.time)))throw Error('Expired epoch');
   if (!validWork(r,m.sender,m.nonce,m.epoch)) throw Error('Invalid work');
   return m;
 }
