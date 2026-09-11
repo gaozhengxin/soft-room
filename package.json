@@ -9,17 +9,23 @@
     "preview": "node scripts/serve-static.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:network": "node tests/browser-static.mjs",
-    "test:lan": "node tests/browser-static.mjs"
+    "test:lan": "node tests/browser-static.mjs",
+    "test:mesh": "node tests/browser-mesh.mjs",
+    "test:mesh:engine": "node tests/browser-mesh-engine.mjs",
+    "test:channels": "node tests/browser-channels.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/core": "^8.5.1",
     "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
-    "@waku/sdk": "^0.0.36"
+    "@waku/sdk": "^0.0.36",
+    "@waku/core": "0.0.40"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",

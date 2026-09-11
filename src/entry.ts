@@ -1,3 +1,4 @@
+import {nativeApp,readLocation} from './platform.ts';
 import './style.css';
 import './sssp.css';
 import './access.css';
@@ -24,11 +25,11 @@ function unsupported(){
  button(panel,text.copy,()=>{void(async()=>{try{await navigator.clipboard.writeText(location.href);status.textContent=text.copied;}catch{status.textContent=text.copyManual;const input=document.createElement('textarea');input.value=location.href;input.readOnly=true;input.setAttribute('aria-label',text.copy);panel.append(input);input.focus();input.select();}})();});panel.append(status);
 }
 async function start(){
- if(!info.supported){unsupported();return;}
+ const native=nativeApp();
+ if(!native&&!info.supported){unsupported();return;}
  screen(text.checking,text.wait,true);
- if(!localAddress(location.hostname))try{
-  const response=await fetch('/cdn-cgi/trace',{signal:AbortSignal.timeout(8000),credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store'});
-  if(!response.ok)throw Error('Lookup unavailable');const result=parseTrace(await response.text());
+ if(native||!localAddress(location.hostname))try{
+  const result=parseTrace(await readLocation(native,import.meta.env.VITE_PUBLIC_ORIGIN));
   if(blockedCountry(result.country)){screen(text.region,text.regionDetail);return;}
  }catch{const panel=screen(text.failed,text.failedDetail);button(panel,text.retry,()=>void start());return;}
  try{app.replaceChildren();await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}

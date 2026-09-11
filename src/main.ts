@@ -1,3 +1,9 @@
+import {createIceProvider} from './ice.ts';
+import {keepMobileScreenOn} from './awake.ts';
+import {nativeApp,invitationLink} from './platform.ts';
+import {RoomMesh} from './mesh.ts';
+import {mountMeshPanel} from './mesh-ui.ts';
+import networkIcon from './icons/network.svg?raw';
 import {browserLanguage} from './access.ts';
 import userIcon from './icons/user-round.svg?raw';
 import peopleIcon from './icons/users-round.svg?raw';
@@ -18,6 +24,7 @@ let storage:Storage|undefined;
 try {storage=window.sessionStorage;} catch { /* Memory-only fallback. */ }
 const loaded=loadSession(storage,browserLanguage(navigator.languages?.length?navigator.languages:[navigator.language]));
 let session=loaded.session,cacheFailed=loaded.failed;
+const iceProvider=createIceProvider(import.meta.env.VITE_TURN_CREDENTIALS_URL,fetch,Date.now,()=>session.identity,()=>meshPanel.render(),storage);
 session.theme ??= 'soft';
 const t=(key:TextKey,params:Record<string,string|number>={})=>translate(session.language,key,params);
 const histories=new Map<string,ChatEntry[]>();
@@ -25,6 +32,7 @@ const membersByRoom=new Map<string,Map<string,Member>>();
 let heartbeatFlight:Promise<void>|undefined,lastHeartbeatAttempt=0;
 const seenIds=new Map<string,Set<string>>();
 let active:SavedRoom|undefined,connection:Awaited<ReturnType<typeof connect>>|undefined;
+let mesh:RoomMesh|undefined;
 let generation=0,busy=false,sending=false,controller:AbortController|undefined;
 let statusKey:TextKey='idle',noticeKey:TextKey|undefined,copyValue:string|undefined;
 let writeController:AbortController|undefined,writeBusy=false,writePaused=false;
@@ -96,6 +104,7 @@ document.querySelector('.top')!.remove();document.querySelector('footer')!.remov
 const head=document.querySelector('.chat-head')!;
 head.insertAdjacentHTML('afterbegin','<button id="sidebar-toggle" class="icon-button" data-label="myRooms" aria-controls="room-sidebar" aria-expanded="true">☰</button>');sidebar.id='room-sidebar';
 $('room-tools').replaceChildren();$('room-tools').innerHTML='<button id="room-me" class="icon-button" data-label="roomIdentity">✳</button><button id="room-members" class="icon-button" data-label="members">♧</button><button id="room-menu" class="icon-button" data-label="roomInfo">···</button>';head.append($('room-tools'));
+const meshButton=document.createElement('button');meshButton.id='room-network';meshButton.className='icon-button';meshButton.dataset.label='meshTitle';meshButton.innerHTML=networkIcon;$('room-tools').insertBefore(meshButton,$('room-menu'));
 $('room-me').innerHTML=userIcon;$('room-members').innerHTML=peopleIcon;$('room-menu').innerHTML=settingsIcon;
 document.querySelector('.history-note')!.remove();
 shell.insertAdjacentHTML('beforeend','<button id="sidebar-backdrop" class="sidebar-backdrop" tabindex="-1" data-label="close" hidden></button><div id="cache-alert" role="alert" hidden></div>');
@@ -114,6 +123,7 @@ $('remove-active').onclick=()=>{if(active)void removeRoom(active);};
 $('reset-nickname').onclick=()=>{$<HTMLInputElement>('nickname').value='';$<HTMLFormElement>('nickname-form').requestSubmit();};
 $('global-name-form').onsubmit=event=>{event.preventDefault();try{const name=normalizeNickname($<HTMLInputElement>('global-name').value);if(name)session.name=name;else delete session.name;save();savedFeedback('global-name-form','identity-dialog','nameSaved');}catch{$('identity-feedback').textContent=t('nicknameInvalid');}};
 $('share-copy').onclick=async()=>{const button=$<HTMLButtonElement>('share-copy');button.classList.add('copy-pressed');setTimeout(()=>button.classList.remove('copy-pressed'),260);const input=$<HTMLTextAreaElement>('share-link');try{await navigator.clipboard.writeText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
+const meshPanel=mountMeshPanel({host:shell,button:meshButton,t,selfName:()=>effectiveName(session.name,active?.nickname)||'',getMesh:()=>mesh,canJoin:()=>!!active&&!!connection?.connected()&&canWrite(active),name:key=>{const m=active?membersByRoom.get(roomId(active.room))?.get(key):undefined;return key===session.identity.publicKey?effectiveName(session.name,active?.nickname)||t('you'):m?.name||t('visitor',{id:key.slice(0,8)});}});
 let membersView='';
 const savedToast=document.createElement('div');savedToast.className='saved-toast';savedToast.setAttribute('role','status');savedToast.setAttribute('aria-live','polite');savedToast.hidden=true;document.body.append(savedToast);
 let toastTimer:ReturnType<typeof setTimeout>|undefined;
@@ -146,7 +156,7 @@ async function sendHeartbeat(){
  const saved=active,transport=connection,current=generation;
  if(!saved||!transport?.connected()||!canWrite(saved)||sending||heartbeatFlight||Date.now()-lastHeartbeatAttempt<HEARTBEAT_INTERVAL)return;
  lastHeartbeatAttempt=Date.now();
- const flight=(async()=>{try{const packet=seal(saved.room,session.identity,saved.nonce!,'',effectiveName(session.name,saved.nickname),saved.epoch,'heartbeat');await transport.send(packet.payload);if(current===generation)addMessage(saved,packet.message);}catch{ /* Presence expires naturally; never display heartbeat traffic or errors. */ }})();
+ const flight=(async()=>{try{const packet=seal(saved.room,session.identity,saved.nonce!,'',effectiveName(session.name,saved.nickname),saved.epoch,'heartbeat',mesh?.membership??null);await transport.send(packet.payload);if(current===generation)addMessage(saved,packet.message);}catch{ /* Presence expires naturally; never display heartbeat traffic or errors. */ }})();
  heartbeatFlight=flight;await flight;if(heartbeatFlight===flight)heartbeatFlight=undefined;
 }
 function renderCache(){
@@ -227,7 +237,7 @@ function languageChanged(){
  for(const [data,attr] of [['placeholder','placeholder'],['label','aria-label'],['title','title']] as const)document.querySelectorAll<HTMLElement>(`[data-${data}]`).forEach(el=>el.setAttribute(attr,t(el.dataset[data] as TextKey)));
  if(session.theme==='sssp')document.querySelector('[data-i18n="tagline"]')!.textContent=t('patrolTagline');
  $<HTMLSelectElement>('skin').value=session.theme||'soft';
- $<HTMLSelectElement>('language').value=session.language;renderCache();controls();renderRooms();renderMessages();renderNotice();renderMembers();
+ $<HTMLSelectElement>('language').value=session.language;renderCache();controls();renderRooms();renderMessages();renderNotice();renderMembers();meshPanel.render();
 }
 function remember(room:Room,created=false):SavedRoom|undefined{
  const found=session.rooms.find(saved=>roomId(saved.room)===roomId(room));if(found)return found;
@@ -235,6 +245,8 @@ function remember(room:Room,created=false):SavedRoom|undefined{
  const saved:SavedRoom={room,created};session.rooms.unshift(saved);save();renderRooms();return saved;
 }
 async function disconnect(){
+ meshPanel.reset();
+ mesh?.leave();mesh?.stop();mesh=undefined;
  generation++;lastHeartbeatAttempt=0;heartbeatFlight=undefined;writeController?.abort();writeController=undefined;writeBusy=false;writePaused=false;controller?.abort();controller=undefined;const old=connection;connection=undefined;active=undefined;busy=false;sending=false;session.activeId=undefined;statusKey='idle';
  $<HTMLTextAreaElement>('message').value='';save();controls();renderRooms();renderMessages();
  await old?.stop();
@@ -270,6 +282,9 @@ async function enter(saved:SavedRoom){
    if(current!==generation)return;saved.room.key=key;save();
   }
   statusKey='connecting';notice('waitingNetwork');controls();
+  mesh=new RoomMesh({iceProvider,cancelIce:()=>iceProvider.cancel(),iceExpires:()=>iceProvider.expires(),turnState:iceProvider.state,room:roomId(saved.room),identity:session.identity,
+   send:async message=>{if(current!==generation||!connection?.connected()||!canWrite(saved))throw Error('Not ready');const packet=seal(saved.room,session.identity,saved.nonce!,JSON.stringify(message),effectiveName(session.name,saved.nickname),saved.epoch,'mesh');await connection.send(packet.payload);},
+   announce:()=>{lastHeartbeatAttempt=0;void sendHeartbeat();},changed:()=>meshPanel.render()});
   const next=await connect(saved.room,payload=>{
    if(current!==generation)return;
    try{const m=open(saved.room,payload);addMessage(saved,m);}catch{ /* Reject invalid ciphertext, signatures, work and epochs. */ }
@@ -281,11 +296,11 @@ async function enter(saved:SavedRoom){
 }
 function addMessage(saved:SavedRoom,m:Message){
  const id=roomId(saved.room),messages=histories.get(id)||[];
- const seen=seenIds.get(id)||new Set<string>();if(seen.has(m.id))return;seen.add(m.id);if(seen.size>2000)seen.delete(seen.values().next().value!);seenIds.set(id,seen);const members=membersByRoom.get(id)||new Map<string,Member>();const entry=observeMember(members,m);membersByRoom.set(id,members);if(m.kind!=='heartbeat'||entry.nameChange){messages.push(entry);if(messages.length>300)messages.shift();histories.set(id,messages);}
+ const seen=seenIds.get(id)||new Set<string>();if(seen.has(m.id))return;seen.add(m.id);if(seen.size>2000)seen.delete(seen.values().next().value!);seenIds.set(id,seen);if(active&&id===roomId(active.room))mesh?.receive(m);if(m.kind==='mesh')return;const members=membersByRoom.get(id)||new Map<string,Member>();const entry=observeMember(members,m);membersByRoom.set(id,members);if(m.kind!=='heartbeat'||entry.nameChange){messages.push(entry);if(messages.length>300)messages.shift();histories.set(id,messages);}
  if(active&&id===roomId(active.room)){if(m.kind!=='heartbeat'||entry.nameChange)renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();}
 }
 async function copyInvitation(room:Room){
- $('share-name').textContent=room.name;$<HTMLTextAreaElement>('share-link').value=`${location.origin}${location.pathname}#${invite(room)}`;$('share-feedback').textContent='';showPanel('share-dialog');
+ $('share-name').textContent=room.name;$<HTMLTextAreaElement>('share-link').value=invitationLink(invite(room),nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);$('share-feedback').textContent='';showPanel('share-dialog');
 }
 async function removeRoom(saved:SavedRoom){
  if(!confirm(t('removeConfirm',{name:saved.room.name})))return;closePanels();
@@ -321,9 +336,9 @@ function checkDay(){
  if(!canWrite(active)){controls();renderRooms();void prepareWrite();}
  else if(!writeBusy&&statusKey!=='connected'){statusKey='connected';controls();renderRooms();}
 }
-setInterval(()=>{checkDay();void sendHeartbeat();if($<HTMLDialogElement>('members-dialog').open)renderMembers();},1000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){checkDay();void sendHeartbeat();}});
+setInterval(()=>{mesh?.tick();meshPanel.render();checkDay();void sendHeartbeat();if($<HTMLDialogElement>('members-dialog').open)renderMembers();},1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){mesh?.tick();checkDay();void sendHeartbeat();}});
 window.addEventListener('focus',checkDay);
-languageChanged();save();
+languageChanged();save();keepMobileScreenOn();
 if(location.hash){const code=location.hash.slice(1);history.replaceState(null,'',location.pathname);try{const room=parseInvite(code);$<HTMLTextAreaElement>('invite-input').value=code;openNew();$('choose-join').click();$('form-feedback').textContent=room.name;}catch{notice('inviteInvalid');}}
 else if(session.activeId){const saved=session.rooms.find(item=>roomId(item.room)===session.activeId);if(saved)void enter(saved);}
