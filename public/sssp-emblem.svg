@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 112" fill="none">
+ <defs><linearGradient id="metal" x1="38" y1="16" x2="73" y2="91" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset=".48" stop-color="#e2e6e7"/><stop offset="1" stop-color="#8d979e"/></linearGradient><linearGradient id="tail" x1="63" y1="53" x2="149" y2="18" gradientUnits="userSpaceOnUse"><stop stop-color="#a93123"/><stop offset="1" stop-color="#e76129"/></linearGradient></defs>
+ <path d="M57 45 149 15 116 47 156 42 121 62 146 65 74 85Z" fill="url(#tail)" stroke="#a43f27" stroke-width="1.5" stroke-linejoin="round"/>
+ <path d="m83 48 45-18M86 58l48-8M88 69l39-4" stroke="#ffc696" stroke-width="2" opacity=".65"/>
+ <ellipse cx="53" cy="58" rx="41" ry="26" transform="rotate(-24 53 58)" fill="#243746" stroke="url(#metal)" stroke-width="4"/>
+ <path d="m49 17 10 24 27-4-18 21 11 25-26-11-21 18 3-28-25-13 28-6Z" fill="url(#metal)" stroke="#65727a" stroke-width="1.5" stroke-linejoin="round"/>
+ <path d="m49 31 5 19 19-5-15 13 9 15-15-8-11 12 3-17-17-9 19-1Z" fill="#f7f5ed" opacity=".55"/>
+ <path d="m16 82 80-31" stroke="#e9edef" stroke-width="2.5"/>
+ <text x="61" y="104" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="4" fill="#3a4852">SSSP</text>
+</svg>
