@@ -5,6 +5,7 @@ import settingsIcon from './icons/settings.svg?raw';
 import './style.css';
 import './sssp.css';
 import './layout.css';
+import './kabutack.css';
 import {effectiveName,type ChatEntry} from './names.ts';
 import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, type Room, type Message } from './protocol.ts';
 import { computeReadKey, computeWork, type WorkProgress } from './pow.ts';
@@ -17,7 +18,7 @@ let storage:Storage|undefined;
 try {storage=window.sessionStorage;} catch { /* Memory-only fallback. */ }
 const loaded=loadSession(storage,browserLanguage(navigator.languages?.length?navigator.languages:[navigator.language]));
 let session=loaded.session,cacheFailed=loaded.failed;
-session.theme ??= 'sssp';
+session.theme ??= 'soft';
 const t=(key:TextKey,params:Record<string,string|number>={})=>translate(session.language,key,params);
 const histories=new Map<string,ChatEntry[]>();
 const membersByRoom=new Map<string,Map<string,Member>>();
@@ -30,7 +31,7 @@ let writeController:AbortController|undefined,writeBusy=false,writePaused=false;
 let progress:WorkProgress={attempts:0,elapsed:0};
 const save=()=>{cacheFailed=!saveSession(storage,session);renderCache();};
 $('app').innerHTML=`<div class="shell">
-<header class="top"><a class="brand" href="/" data-label="home"><span class="mark"><span class="soft-monogram">s<span>r</span></span><img class="sssp-emblem" src="/sssp-emblem.svg" alt=""/></span><span>soft room<small data-i18n="tagline"></small></span></a><div class="top-tools"><div class="identity"><span class="avatar">✳</span><span><small data-i18n="temporaryIdentity"></small><b id="identity"></b></span></div><label class="sr-only" for="skin" data-i18n="skin"></label><select id="skin"><option value="sssp" data-i18n="skinSssp"></option><option value="soft" data-i18n="skinSoft"></option></select><label class="sr-only" for="language" data-i18n="language"></label><select id="language"><option value="zh">中文</option><option value="en">English</option></select></div></header>
+<header class="top"><a class="brand" href="/" data-label="home"><span class="mark"><span class="soft-monogram">s<span>r</span></span><img class="sssp-emblem" src="/sssp-emblem.svg" alt=""/></span><span>soft room<small data-i18n="tagline"></small></span></a><div class="top-tools"><div class="identity"><span class="avatar">✳</span><span><small data-i18n="temporaryIdentity"></small><b id="identity"></b></span></div><label class="sr-only" for="skin" data-i18n="skin"></label><select id="skin"><option value="soft" data-i18n="skinSoft"></option><option value="sssp" data-i18n="skinSssp"></option><option value="kabutack" data-i18n="skinKabutack"></option></select><label class="sr-only" for="language" data-i18n="language"></label><select id="language"><option value="zh">中文</option><option value="en">English</option></select></div></header>
 <section class="session-banner"><div><strong id="cache-warning"></strong><p data-i18n="sessionDetail"></p></div><button id="clear-session" data-i18n="clearSession"></button></section>
 <main class="layout"><aside class="panel controls">
 <div class="eyebrow" data-i18n="eyebrow"></div><h1 data-i18n="heading"></h1><p class="intro" data-i18n="intro"></p>
@@ -112,7 +113,7 @@ $('room-menu').onclick=()=>{if(active){$('room-info-name').textContent=active.ro
 $('remove-active').onclick=()=>{if(active)void removeRoom(active);};
 $('reset-nickname').onclick=()=>{$<HTMLInputElement>('nickname').value='';$<HTMLFormElement>('nickname-form').requestSubmit();};
 $('global-name-form').onsubmit=event=>{event.preventDefault();try{const name=normalizeNickname($<HTMLInputElement>('global-name').value);if(name)session.name=name;else delete session.name;save();savedFeedback('global-name-form','identity-dialog','nameSaved');}catch{$('identity-feedback').textContent=t('nicknameInvalid');}};
-$('share-copy').onclick=async()=>{const input=$<HTMLTextAreaElement>('share-link');try{await navigator.clipboard.writeText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
+$('share-copy').onclick=async()=>{const button=$<HTMLButtonElement>('share-copy');button.classList.add('copy-pressed');setTimeout(()=>button.classList.remove('copy-pressed'),260);const input=$<HTMLTextAreaElement>('share-link');try{await navigator.clipboard.writeText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
 let membersView='';
 const savedToast=document.createElement('div');savedToast.className='saved-toast';savedToast.setAttribute('role','status');savedToast.setAttribute('aria-live','polite');savedToast.hidden=true;document.body.append(savedToast);
 let toastTimer:ReturnType<typeof setTimeout>|undefined;
@@ -220,12 +221,12 @@ function renderMessages(){
 }
 function languageChanged(){
  document.documentElement.dataset.theme=session.theme;
- document.querySelector('meta[name="theme-color"]')?.setAttribute('content',session.theme==='sssp'?'#e0e4e7':'#e7ebe7');
+ document.querySelector('meta[name="theme-color"]')?.setAttribute('content',session.theme==='sssp'?'#e0e4e7':session.theme==='kabutack'?'#eee9e2':'#e7ebe7');
  document.documentElement.lang=session.language==='zh'?'zh-CN':'en';document.title=session.language==='zh'?'Soft Room · 随便聊聊':'Soft Room · Just chatting';
  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n as TextKey));
  for(const [data,attr] of [['placeholder','placeholder'],['label','aria-label'],['title','title']] as const)document.querySelectorAll<HTMLElement>(`[data-${data}]`).forEach(el=>el.setAttribute(attr,t(el.dataset[data] as TextKey)));
  if(session.theme==='sssp')document.querySelector('[data-i18n="tagline"]')!.textContent=t('patrolTagline');
- $<HTMLSelectElement>('skin').value=session.theme||'sssp';
+ $<HTMLSelectElement>('skin').value=session.theme||'soft';
  $<HTMLSelectElement>('language').value=session.language;renderCache();controls();renderRooms();renderMessages();renderNotice();renderMembers();
 }
 function remember(room:Room,created=false):SavedRoom|undefined{
@@ -304,7 +305,7 @@ $('clear-session').addEventListener('click',async()=>{
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Save below reports storage failure. */ }
  const theme=session.theme;session=freshSession(session.language);session.theme=theme;histories.clear();seenIds.clear();membersByRoom.clear();save();languageChanged();notice('sessionCleared');
 });
-$('skin').addEventListener('change',()=>{session.theme=$<HTMLSelectElement>('skin').value as 'soft'|'sssp';save();languageChanged();});
+$('skin').addEventListener('change',()=>{session.theme=$<HTMLSelectElement>('skin').value as 'soft'|'sssp'|'kabutack';save();languageChanged();});
 $('language').addEventListener('change',()=>{session.language=$<HTMLSelectElement>('language').value as Language;save();languageChanged();});
 $('composer').addEventListener('submit',async event=>{
  event.preventDefault();const input=$<HTMLTextAreaElement>('message');if(!active||!connection||sending||!input.value.trim())return;

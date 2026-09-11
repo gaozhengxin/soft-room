@@ -2,7 +2,7 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import { dayEpoch, normalizeNickname, makeIdentity, parseInvite, invite, roomId, validWork, type Identity, type Room } from './protocol.ts';
 export type SavedRoom={room:Room;created:boolean;nonce?:number;epoch?:number;nickname?:string};
-export type Session={identity:Identity;name?:string;rooms:SavedRoom[];activeId?:string;language:'zh'|'en';theme?:'soft'|'sssp'};
+export type Session={identity:Identity;name?:string;rooms:SavedRoom[];activeId?:string;language:'zh'|'en';theme?:'soft'|'sssp'|'kabutack'};
 export const SESSION_KEY='soft-room/session/v1';
 export function freshSession(language:'zh'|'en'='zh'):Session{return {identity:makeIdentity(),rooms:[],language};}
 export function encodeSession(s:Session):string{return JSON.stringify({v:1,name:s.name,secret:bytesToHex(s.identity.secret),rooms:s.rooms,activeId:s.activeId,language:s.language,theme:s.theme});}
@@ -21,7 +21,7 @@ export function decodeSession(raw:string):Session {
   }catch{ /* Ignore a corrupt room without discarding the entire identity. */ }
  }
  let name='';try{if(typeof value.name==='string')name=normalizeNickname(value.name);}catch{}
- return {identity:{secret,publicKey},...(name?{name}:{}),rooms,...(value.theme==='soft'||value.theme==='sssp'?{theme:value.theme}:{}),language:value.language==='en'?'en':'zh',activeId:rooms.some(x=>roomId(x.room)===value.activeId)?value.activeId:undefined};
+ return {identity:{secret,publicKey},...(name?{name}:{}),rooms,...(value.theme==='soft'||value.theme==='sssp'||value.theme==='kabutack'?{theme:value.theme}:{}),language:value.language==='en'?'en':'zh',activeId:rooms.some(x=>roomId(x.room)===value.activeId)?value.activeId:undefined};
 }
 export function loadSession(storage:Pick<Storage,'getItem'>|undefined,language:'zh'|'en'):{session:Session;failed:boolean}{
  try{const raw=storage?.getItem(SESSION_KEY);return {session:raw?decodeSession(raw):freshSession(language),failed:!storage};}
