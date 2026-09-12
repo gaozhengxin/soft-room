@@ -12,13 +12,23 @@ npm run ios:sync
 npm run ios:open
 ```
 
-`npm run ios:ipa` creates `artifacts/Soft-Room-unsigned.ipa`, a Release arm64 device build awaiting signing. It deliberately contains no provisioning profile or signing keys. The manually triggered **iOS test build** GitHub Actions workflow performs the same build on macOS 26; it uses the account's standard Actions allowance and does not change billing settings. Download its private artifact to sign locally. Do not publish the unsigned artifact as a ready-to-install app.
+`npm run ios:ipa` creates `artifacts/Soft-Room-unsigned.ipa`, a Release arm64 device build awaiting signing. It contains no provisioning profile or signing keys. The manually triggered **iOS release build** GitHub Actions workflow builds the same source on macOS 26 and uploads this intermediate as a private, seven-day Actions artifact. Only a locally signed IPA is attached to a GitHub Release; no Apple account credentials or private signing key are stored in GitHub.
+
+After committing and pushing the version, run the workflow and publish its successful build from this Mac:
+
+```sh
+gh workflow run ios-release-build.yml --ref codex/initial
+gh run list --workflow ios-release-build.yml --limit 1
+bash scripts/publish-ios-personal.sh RUN_ID v1.0.0 /path/to/profile.mobileprovision CERTIFICATE_SHA1
+```
+
+`publish-ios-personal.sh` checks that the Actions build matches the current commit, validates the device profile, signs the app and nested frameworks using the local Keychain, verifies the IPA, and creates a private release with a stable `Soft-Room.ipa` asset name. Version tags must be unique. The release page is linked in the app sidebar, and mobile layouts link to the latest IPA download. The browser may require GitHub login for this private repository. iOS can download the IPA, but cannot silently install or re-sign it.
 
 The app declares camera, microphone and local-network usage. Microphone/camera acquisition remains controlled by the channel controls. The existing Keep Awake native plugin is included. App ID: `uk.wakukusmartrecipe.soft`.
 
 ## Free personal-device signing
 
-Use [Sideloadly](https://sideloadly.io/) with your own free Apple account, or Xcode's Personal Team on a Mac with Xcode 26+.
+Use [Sideloadly](https://sideloadly.io/) with your own free Apple account, or Xcode's Personal Team. A Personal Team profile includes specific registered devices; the published signed IPA installs only on those devices. Other testers must sign for their own device using the private Actions build or a future distribution service.
 
 1. Connect the iPhone by USB, unlock it and trust this Mac.
 2. In Sideloadly, select the phone and the unsigned IPA. Keep the normal Apple ID sideloading mode; no tweaks or app modifications are needed.

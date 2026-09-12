@@ -1,4 +1,4 @@
-name: iOS test build
+name: iOS release build
 on:
   workflow_dispatch:
 permissions:
@@ -6,7 +6,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,9 +15,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run ios:ipa
+      - run: unzip -tq artifacts/Soft-Room-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: Soft-Room-iOS-${{ github.sha }}
+          name: Soft-Room-signing-input-${{ github.sha }}
           path: artifacts/Soft-Room-unsigned.ipa*
           if-no-files-found: error
           retention-days: 7
