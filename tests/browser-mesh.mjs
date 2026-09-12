@@ -11,7 +11,7 @@ async function panel(p){if(!await p.locator('#mesh-dialog').isVisible())await p.
 async function joined(p,count){await p.waitForFunction(n=>document.querySelectorAll('#channel-people .channel-person[data-state="connected"]').length===n,count,{timeout:90000});}
 async function create(p,name){await panel(p);await p.locator('#channel-new').click();await p.locator('#channel-name').fill(name);await p.locator('#channel-create button').click();}
 async function join(p,name){await panel(p);await p.locator('.channel-card').filter({hasText:name}).waitFor({timeout:30000});await p.locator('.channel-card').filter({hasText:name}).click();}
-async function leave(p){await p.locator('#channel-back').click();await p.locator('#channel-page').waitFor({state:'hidden'});await p.waitForTimeout(200);}
+async function leave(p){await p.locator('#channel-leave').click();await p.locator('#channel-page').waitFor({state:'hidden'});await p.waitForTimeout(200);}
 async function run(){
  await a.goto(origin,{waitUntil:'domcontentloaded'});await a.locator('#new-room').click();await a.locator('#room-name').fill('WebRTC mesh E2E');await a.locator('.toggle').click();await a.locator('#create-button').click();await ready(a);
  await a.locator('#room-menu').click();await a.locator('#copy').click();const link=await a.locator('#share-link').inputValue();await a.locator('#share-dialog .sheet-head button').click();console.log('ROOM_READY');

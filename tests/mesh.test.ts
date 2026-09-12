@@ -32,15 +32,15 @@ test('mesh packets require the same daily identity proof as chat',()=>{
  let invalid=nonce+1;while(check(invalid))invalid++;assert.throws(()=>seal(r,a,invalid,JSON.stringify(signal),'',epoch,'mesh'));
  assert.throws(()=>seal(r,a,nonce,JSON.stringify(signal),'',epoch-1,'mesh'));
 });
-test('late discovery, explicit leave, stale heartbeats and network expiry',()=>{
+test('channel memory survives leave and presence expiry; stale claims do not restore participants',()=>{
  let now=Date.now();const mesh=new RoomMesh({room:roomId(room),identity:b,send:async()=>{},announce:()=>{},changed:()=>{},now:()=>now});
  const packet=seal(room,a,0,'','',undefined,'heartbeat',membership).message;
  mesh.receive(packet);assert.equal(mesh.networks().length,1);
- now=packet.time+30000;assert.equal(mesh.networks().length,0);
+ now=packet.time+30000;assert.equal(mesh.networks().length,1);assert.equal(mesh.networks()[0].people.length,0);
  mesh.receive({...packet,time:now,mesh:membership});assert.equal(mesh.networks().length,1);
- mesh.receive({...packet,time:now+1,mesh:null});assert.equal(mesh.networks().length,0);
- mesh.receive({...packet,time:now,mesh:membership});assert.equal(mesh.networks().length,0);
- mesh.stop();mesh.receive({...packet,time:now+2});assert.equal(mesh.networks().length,0);
+ mesh.receive({...packet,time:now+1,mesh:null});assert.equal(mesh.networks()[0].people.length,0);
+ mesh.receive({...packet,time:now,mesh:membership});assert.equal(mesh.networks()[0].people.length,0);
+ mesh.stop();mesh.receive({...packet,time:now+2});assert.equal(mesh.networks()[0].people.length,0);
 });
 test('native entry uses an explicit public origin, never localhost exemptions or capacitor invite URLs',()=>{
  assert.equal(locationEndpoint(false,undefined),'/cdn-cgi/trace');

@@ -1,3 +1,4 @@
+import type {Network} from './mesh-wire.ts';
 import {preserveScroll} from './scroll.ts';
 import {createIceProvider} from './ice.ts';
 import {keepMobileScreenOn} from './awake.ts';
@@ -29,6 +30,7 @@ const iceProvider=createIceProvider(import.meta.env.VITE_TURN_CREDENTIALS_URL,fe
 session.theme ??= 'soft';
 const t=(key:TextKey,params:Record<string,string|number>={})=>translate(session.language,key,params);
 let historyState:'idle'|'loading'|'error'='idle';
+const channelMemory=new Map<string,Map<string,Network>>();
 const histories=new Map<string,ChatEntry[]>();
 const membersByRoom=new Map<string,Map<string,Member>>();
 let heartbeatFlight:Promise<void>|undefined,lastHeartbeatAttempt=0;
@@ -126,7 +128,7 @@ $('remove-active').onclick=()=>{if(active)void removeRoom(active);};
 $('reset-nickname').onclick=()=>{$<HTMLInputElement>('nickname').value='';$<HTMLFormElement>('nickname-form').requestSubmit();};
 $('global-name-form').onsubmit=event=>{event.preventDefault();try{const name=normalizeNickname($<HTMLInputElement>('global-name').value);if(name)session.name=name;else delete session.name;save();savedFeedback('global-name-form','identity-dialog','nameSaved');}catch{$('identity-feedback').textContent=t('nicknameInvalid');}};
 $('share-copy').onclick=async()=>{const button=$<HTMLButtonElement>('share-copy');button.classList.add('copy-pressed');setTimeout(()=>button.classList.remove('copy-pressed'),260);const input=$<HTMLTextAreaElement>('share-link');try{await navigator.clipboard.writeText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
-const meshPanel=mountMeshPanel({host:shell,button:meshButton,t,selfName:()=>effectiveName(session.name,active?.nickname)||'',getMesh:()=>mesh,canJoin:()=>!!active&&!!connection?.connected()&&canWrite(active),name:key=>{const m=active?membersByRoom.get(roomId(active.room))?.get(key):undefined;return key===session.identity.publicKey?effectiveName(session.name,active?.nickname)||t('you'):m?.name||t('visitor',{id:key.slice(0,8)});}});
+const meshPanel=mountMeshPanel({host:shell,button:meshButton,t,isSelf:key=>key===session.identity.publicKey,selfName:()=>effectiveName(session.name,active?.nickname)||'',getMesh:()=>mesh,canJoin:()=>!!active&&!!connection?.connected()&&canWrite(active),name:key=>{const m=active?membersByRoom.get(roomId(active.room))?.get(key):undefined;return key===session.identity.publicKey?effectiveName(session.name,active?.nickname)||t('you'):m?.name||t('visitor',{id:key.slice(0,8)});}});
 let membersView='';
 const savedToast=document.createElement('div');savedToast.className='saved-toast';savedToast.setAttribute('role','status');savedToast.setAttribute('aria-live','polite');savedToast.hidden=true;document.body.append(savedToast);
 let toastTimer:ReturnType<typeof setTimeout>|undefined;
@@ -159,7 +161,7 @@ async function sendHeartbeat(){
  const saved=active,transport=connection,current=generation;
  if(!saved||!transport?.connected()||!canWrite(saved)||sending||heartbeatFlight||Date.now()-lastHeartbeatAttempt<HEARTBEAT_INTERVAL)return;
  lastHeartbeatAttempt=Date.now();
- const flight=(async()=>{try{const packet=seal(saved.room,session.identity,saved.nonce!,'',effectiveName(session.name,saved.nickname),saved.epoch,'heartbeat',mesh?.membership??null);await transport.send(packet.payload);if(current===generation)addMessage(saved,packet.message);}catch{ /* Presence expires naturally; never display heartbeat traffic or errors. */ }})();
+ const flight=(async()=>{try{const packet=seal(saved.room,session.identity,saved.nonce!,'',effectiveName(session.name,saved.nickname),saved.epoch,'heartbeat',mesh?.membership??null,mesh?.announcements());await transport.send(packet.payload);if(current===generation)addMessage(saved,packet.message);}catch{ /* Presence expires naturally; never display heartbeat traffic or errors. */ }})();
  heartbeatFlight=flight;await flight;if(heartbeatFlight===flight)heartbeatFlight=undefined;
 }
 function renderCache(){
@@ -302,7 +304,8 @@ async function enter(saved:SavedRoom){
    if(current!==generation)return;saved.room.key=key;save();
   }
   statusKey='connecting';notice('waitingNetwork');controls();
-  mesh=new RoomMesh({iceProvider,cancelIce:()=>iceProvider.cancel(),iceExpires:()=>iceProvider.expires(),turnState:iceProvider.state,room:roomId(saved.room),identity:session.identity,
+  const catalog=channelMemory.get(roomId(saved.room))||new Map<string,Network>();channelMemory.set(roomId(saved.room),catalog);
+  mesh=new RoomMesh({catalog,iceProvider,cancelIce:()=>iceProvider.cancel(),iceExpires:()=>iceProvider.expires(),turnState:iceProvider.state,room:roomId(saved.room),identity:session.identity,
    send:async message=>{if(current!==generation||!connection?.connected()||!canWrite(saved))throw Error('Not ready');const packet=seal(saved.room,session.identity,saved.nonce!,JSON.stringify(message),effectiveName(session.name,saved.nickname),saved.epoch,'mesh');await connection.send(packet.payload);},
    announce:()=>{lastHeartbeatAttempt=0;void sendHeartbeat();},changed:()=>meshPanel.render()});
   const next=await connect(saved.room,payload=>{
@@ -325,7 +328,7 @@ async function copyInvitation(room:Room){
 async function removeRoom(saved:SavedRoom){
  if(!confirm(t('removeConfirm',{name:saved.room.name})))return;closePanels();
  const id=roomId(saved.room);if(active&&roomId(active.room)===id)await disconnect();
- session.rooms=session.rooms.filter(item=>roomId(item.room)!==id);histories.delete(id);seenIds.delete(id);membersByRoom.delete(id);save();renderRooms();notice('removed');
+ session.rooms=session.rooms.filter(item=>roomId(item.room)!==id);histories.delete(id);seenIds.delete(id);membersByRoom.delete(id);channelMemory.delete(id);save();renderRooms();notice('removed');
 }
 $('nickname-form').addEventListener('submit',event=>{event.preventDefault();if(!active)return;try{const nickname=normalizeNickname($<HTMLInputElement>('nickname').value);if(nickname)active.nickname=nickname;else delete active.nickname;$<HTMLInputElement>('nickname').value=nickname;save();savedFeedback('nickname-form','nickname-dialog','nicknameSaved');}catch{notice('nicknameInvalid');}});
 $('create').addEventListener('submit',event=>{event.preventDefault();if(busy)return;const room=makeRoom($<HTMLInputElement>('room-name').value.trim()||t('defaultRoom'),$<HTMLInputElement>('pow').checked);const saved=remember(room,true);if(saved)void enter(saved);});
@@ -338,7 +341,7 @@ $('copy').addEventListener('click',()=>{if(active)void copyInvitation(active.roo
 $('clear-session').addEventListener('click',async()=>{
  if(!confirm(t('clearConfirm')))return;closePanels();await disconnect();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Save below reports storage failure. */ }
- const theme=session.theme;session=freshSession(session.language);session.theme=theme;histories.clear();seenIds.clear();membersByRoom.clear();save();languageChanged();notice('sessionCleared');
+ const theme=session.theme;session=freshSession(session.language);session.theme=theme;histories.clear();seenIds.clear();membersByRoom.clear();channelMemory.clear();save();languageChanged();notice('sessionCleared');
 });
 $('skin').addEventListener('change',()=>{session.theme=$<HTMLSelectElement>('skin').value as 'soft'|'sssp'|'kabutack';save();languageChanged();});
 $('language').addEventListener('change',()=>{session.language=$<HTMLSelectElement>('language').value as Language;save();languageChanged();});

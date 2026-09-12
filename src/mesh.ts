@@ -1,15 +1,18 @@
 import {sdpCandidates,candidateKey} from './ice-sdp.ts';
 import type {TurnAccessState} from './ice.ts';
 import {defaultIceServers} from './ice.ts';
-import {createNetwork,randomId,parseSignal,validMembership,channelMode,type ChannelMode,type Membership,type Network,type MeshSignal} from './mesh-wire.ts';
+import {channelEnabled,setNetworkEnabled,validNetwork,createNetwork,randomId,parseSignal,validMembership,channelMode,type ChannelMode,type Membership,type Network,type MeshSignal} from './mesh-wire.ts';
 import type {Identity,Message} from './protocol.ts';
 type Seen={claim:Membership|null;time:number;seenAt:number};
 type Peer={key:string;instance:string;id:string;pc:RTCPeerConnection;channel?:RTCDataChannel;created:number;lastSend:number;lastData:number;lastPing:number;rtt?:number;outgoing?:MeshSignal;sending:boolean;busy:boolean;remoteOfferTime:number;candidates:Set<string>;candidateTail:Promise<void>;managedRelay:boolean;usingRelay?:boolean;stream?:MediaStream;media?:{audio:boolean;video:boolean};};
 export type ChannelText={id:string;sender:string;name:string;time:number;body:string};
 export type MeshPeerView={key:string;state:'connected'|'connecting'|'retrying'|'failed';rtt?:number;audio?:boolean;video?:boolean};
-export type MeshOptions={room:string;identity:Identity;send:(signal:MeshSignal)=>Promise<void>;announce:()=>void;changed:()=>void;rtcConfiguration?:RTCConfiguration;iceProvider?:()=>Promise<RTCConfiguration>;cancelIce?:()=>void;iceExpires?:()=>number;turnState?:TurnAccessState;peerConnection?:(configuration:RTCConfiguration)=>RTCPeerConnection;now?:()=>number};
+export type MeshOptions={catalog?:Map<string,Network>;room:string;identity:Identity;send:(signal:MeshSignal)=>Promise<void>;announce:()=>void;changed:()=>void;rtcConfiguration?:RTCConfiguration;iceProvider?:()=>Promise<RTCConfiguration>;cancelIce?:()=>void;iceExpires?:()=>number;turnState?:TurnAccessState;peerConnection?:(configuration:RTCConfiguration)=>RTCPeerConnection;now?:()=>number};
 // Web APIs only. The owner supplies room transport and lifecycle events; no DOM or Node runtime.
 export class RoomMesh {
+ private catalog:Map<string,Network>;
+ private announcementIndex=0;
+ private pendingAnnouncements=new Set<string>();
  private customTurns=new Map<string,RTCIceServer>();
  private iceVersion=0;
  private iceCheckAt=0;
@@ -25,7 +28,7 @@ export class RoomMesh {
  private textIds=new Set<string>();
  private now:()=>number;
  private options:MeshOptions;
- constructor(options:MeshOptions){this.options=options;this.now=options.now||Date.now;}
+ constructor(options:MeshOptions){this.options=options;this.catalog=options.catalog||new Map();this.now=options.now||Date.now;}
  get customTurn(){return this.selected?this.customTurns.get(this.selected.network.id):undefined;}
  get relayWork(){return this.customTurn?undefined:this.options.turnState;}
  setCustomTurn(server?:RTCIceServer){
@@ -40,9 +43,32 @@ export class RoomMesh {
  get supported(){return !!this.options.peerConnection||typeof globalThis.RTCPeerConnection==='function';}
  private self(){return this.options.identity.publicKey;}
  private alive(key:string,seen:Seen){const p=this.peers.get(key);return this.now()-seen.seenAt<30000||!!p&&p.channel?.readyState==='open'&&this.now()-p.lastData<30000;}
+ getNetwork(id:string){return this.catalog.get(id);}
+ private remember(network:Network){
+  if(!validNetwork(network,this.options.room))return;
+  const old=this.catalog.get(network.id);
+  if(old){
+   if(old.creator!==network.creator||old.name!==network.name||channelMode(old)!==channelMode(network)||(old.revision??-1)>=(network.revision??-1))return;
+  }else if(this.catalog.size>=64)return;
+  this.catalog.set(network.id,network);
+  if(this.selected?.network.id===network.id){
+   if(!channelEnabled(network))this.leave();else this.selected={...this.selected,network};
+  }
+ }
+ announcements(){
+  const result:Network[]=[];
+  for(const id of this.pendingAnnouncements){const n=this.catalog.get(id);if(n)result.push(n);this.pendingAnnouncements.delete(id);if(result.length===4)return result;}
+  const entries=[...this.catalog.values()];
+  for(let i=0;i<entries.length&&result.length<4;i++){const n=entries[this.announcementIndex++%entries.length];if(!result.some(r=>r.id===n.id))result.push(n);}
+  return result;
+ }
+ setEnabled(id:string,enabled:boolean){
+  const network=this.catalog.get(id);if(!network)throw Error('Unknown channel');
+  const next=setNetworkEnabled(network,this.options.identity,enabled);this.pendingAnnouncements.add(id);this.remember(next);this.options.announce();this.options.changed();
+ }
  networks(){
-  const groups=new Map<string,{network:Network;people:string[]}>();
-  const add=(key:string,m:Membership)=>{const g=groups.get(m.network.id)||{network:m.network,people:[]};g.people.push(key);groups.set(m.network.id,g);};
+  const groups=new Map([...this.catalog].map(([id,network])=>[id,{network,people:[] as string[]}]));
+  const add=(key:string,m:Membership)=>{const g=groups.get(m.network.id);if(g&&channelEnabled(g.network))g.people.push(key);};
   if(this.selected)add(this.self(),this.selected);
   for(const [key,s] of this.seen)if(s.claim&&this.alive(key,s))add(key,s.claim);
   return [...groups.values()].sort((a,b)=>a.network.id.localeCompare(b.network.id));
@@ -54,7 +80,10 @@ export class RoomMesh {
  create(name:string,mode:ChannelMode='voice'){this.join(createNetwork(this.options.room,this.options.identity,name,mode));}
  join(network:Network){
   if(this.stopped||!this.supported)throw Error('WebRTC unavailable');
+  this.remember(network);network=this.catalog.get(network.id)||network;
+  if(!channelEnabled(network))throw Error('Channel is off');
   if(this.selected?.network.id===network.id)return;
+  if(!this.catalog.has(network.id))throw Error('Channel memory is full');
   const claim={network,instance:randomId()};if(!validMembership(claim,this.options.room))throw Error('Invalid network');
   this.clearChannel();this.selected=claim;this.options.announce();this.tick();this.options.changed();
  }
@@ -94,7 +123,8 @@ export class RoomMesh {
   if(message.kind==='heartbeat'){
    const old=this.seen.get(message.sender);if(old&&message.time<=old.time)return;
    if(!old&&this.seen.size>=256)return;
-   const claim=message.mesh??null;
+   for(const n of message.channels||[])this.remember(n);
+   const claim=message.mesh??null;if(claim)this.remember(claim.network);
    this.seen.set(message.sender,{claim,time:message.time,seenAt:Math.min(message.time,this.now())});
    const p=this.peers.get(message.sender);
    if(p&&(!claim||claim.network.id!==this.selected?.network.id||claim.instance!==p.instance))this.closePeer(message.sender);

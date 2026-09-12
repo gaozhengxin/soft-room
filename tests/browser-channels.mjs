@@ -26,9 +26,9 @@ async function run(){
    if(mode==='video'){await a.locator('#channel-camera').click();await b.waitForFunction(async()=>{for(const pc of window.testPCs){const stats=await pc.getStats();for(const s of stats.values())if(s.type==='inbound-rtp'&&s.kind==='video'&&s.framesDecoded>0)return true;}return false;},null,{timeout:30000});}
   }
   console.log(mode.toUpperCase()+(process.env.CHANNEL_CROSS_BROWSER?'_CROSS_BROWSER_TEXT_PASS':'_TEXT_AND_MEDIA_PASS'));
-  if(mode==='video')await a.goBack({waitUntil:'domcontentloaded'});else await a.locator('#channel-back').click();await a.locator('#channel-page').waitFor({state:'hidden'});
+  await a.locator('#channel-leave').click();await a.locator('#channel-page').waitFor({state:'hidden'});
   assert.ok(await a.evaluate(()=>window.testTracks.every(t=>t.readyState==='ended')));assert.ok(await a.evaluate(()=>window.testPCs.every(pc=>pc.connectionState==='closed')));
-  await b.locator('#channel-back').click();await b.locator('#channel-page').waitFor({state:'hidden'});await b.waitForTimeout(350);
+  await b.locator('#channel-leave').click();await b.locator('#channel-page').waitFor({state:'hidden'});await b.waitForTimeout(350);
  }
  assert.deepEqual(failures,[]);console.log(process.env.CHANNEL_CROSS_BROWSER?'PASS: WebKit/Chrome over real Waku, three channel modes, text and navigation':'PASS: separate creation page, whole-card entry, WebRTC-only text, voice/video RTP, push-to-talk release, browser back and capture cleanup');
 }

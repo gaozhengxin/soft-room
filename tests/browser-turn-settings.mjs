@@ -9,5 +9,5 @@ try{
  await page.locator('#channel-custom-turn').check();await page.locator('#channel-turn-urls').fill('turns:relay.example:443?transport=tcp');await page.locator('#channel-turn-user').fill('local-user');await page.locator('#channel-turn-password').fill('local-password');await page.locator('#channel-turn-form button').click();assert.equal(await page.locator('#channel-advanced').getAttribute('open'),null);
  await page.locator('#channel-advanced summary').click();assert.equal(await page.locator('#channel-turn-user').inputValue(),'local-user');assert.equal(await page.locator('#channel-turn-password').getAttribute('type'),'password');
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.equal(relayRequests,0);
- await page.locator('#channel-back').click();assert.equal(await page.locator('#channel-turn-password').inputValue(),'');console.log('PASS: mobile advanced settings, custom credentials, no built-in relay exposure or requests, cleanup');
+ await page.locator('#channel-leave').click();assert.equal(await page.locator('#channel-turn-password').inputValue(),'');console.log('PASS: mobile advanced settings, custom credentials, no built-in relay exposure or requests, cleanup');
 }finally{await browser.close();}
