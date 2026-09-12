@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 xcode_major=$(xcodebuild -version | awk '/^Xcode / {split($2, v, "."); print v[1]}')
 if [[ "$xcode_major" -lt 26 ]]; then
-  echo 'Capacitor 8 requires Xcode 26+. Use the iOS test build GitHub workflow on this Mac.' >&2
+  echo 'Capacitor 8 requires Xcode 26+. Use the GitHub iOS release workflow on this Mac.' >&2
   exit 1
 fi
 mkdir -p artifacts
@@ -16,4 +16,4 @@ mkdir -p "$stage/Payload"
 ditto ios/DerivedData/Build/Products/Release-iphoneos/App.app "$stage/Payload/Soft Room.app"
 # A device build awaiting the user's Apple ID signature, not an installable signed IPA.
 ditto -c -k --keepParent "$stage/Payload" artifacts/Soft-Room-unsigned.ipa
-shasum -a 256 artifacts/Soft-Room-unsigned.ipa > artifacts/Soft-Room-unsigned.ipa.sha256
+(cd artifacts && LC_ALL=C shasum -a 256 Soft-Room-unsigned.ipa > Soft-Room-unsigned.ipa.sha256)
