@@ -51,4 +51,4 @@ codesign --force --sign "$identity" --timestamp=none --entitlements "$stage/enti
 codesign --verify --deep --strict "$app"
 ditto -c -k --keepParent "$stage/Payload" "$output"
 unzip -tq "$output"
-shasum -a 256 "$output"
+LC_ALL=C shasum -a 256 "$output"
