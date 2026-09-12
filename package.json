@@ -12,7 +12,10 @@
     "test:lan": "node tests/browser-static.mjs",
     "test:mesh": "node tests/browser-mesh.mjs",
     "test:mesh:engine": "node tests/browser-mesh-engine.mjs",
-    "test:channels": "node tests/browser-channels.mjs"
+    "test:channels": "node tests/browser-channels.mjs",
+    "ios:sync": "npm run build && cap sync ios",
+    "ios:open": "cap open ios",
+    "ios:ipa": "npm run ios:sync && bash scripts/build-ios-unsigned.sh"
   },
   "keywords": [],
   "author": "",
@@ -21,13 +24,15 @@
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",
     "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "8.5.1",
     "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
-    "@waku/sdk": "^0.0.36",
-    "@waku/core": "0.0.40"
+    "@waku/core": "0.0.40",
+    "@waku/sdk": "^0.0.36"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.1",
     "@types/node": "^22.20.2",
     "playwright-core": "^1.63.0",
     "typescript": "^7.0.2",

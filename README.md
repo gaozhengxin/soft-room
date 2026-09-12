@@ -116,13 +116,13 @@ The site stays static. `workers/turn` is a separate Cloudflare Worker which issu
 3. Run `npx wrangler secret put TURN_KEY_ID --config workers/turn/wrangler.jsonc` and the equivalent for `TURN_API_TOKEN`, then `npx wrangler deploy --config workers/turn/wrangler.jsonc` in your chosen account. Namespace `5173001` must not collide with an unrelated limiter in that account.
 4. Set `VITE_TURN_CREDENTIALS_URL=https://<worker>.workers.dev/ice` in `.env.local`, rebuild and refresh every device. No API key is exposed by this variable.
 
-The default relay requires an identity-bound proof for each fixed two-hour UTC epoch. GET /challenge returns a server-authenticated deterministic challenge; POST /ice verifies its HMAC, epoch, difficulty, nonce and Ed25519 signature before calling Cloudflare. GET /ice is disabled. Difficulty is set by the Worker (TURN_POW_BITS=23, expected 8,388,608 SHA256 attempts). The client mines in a dedicated Worker with cancellation and elapsed-time feedback; completed proofs are cached in sessionStorage for the current identity and epoch. Verification is fast and stateless, not a client-only delay.
+The default relay requires an identity-bound proof for each fixed two-hour UTC epoch. GET /challenge returns a server-authenticated deterministic challenge; POST /ice verifies its HMAC, epoch, difficulty, nonce and Ed25519 signature before calling Cloudflare. GET /ice is disabled. Difficulty is set by the Worker (TURN_POW_BITS=18.67807190511264, expected about 419,430 SHA256 attempts). The client mines in a dedicated Worker with cancellation and elapsed-time feedback; completed proofs are cached in sessionStorage for the current identity and epoch. Verification is fast and stateless, not a client-only delay.
 
 Credentials expire before the current epoch ends, with a 10-second issuance margin. Direct connectivity is attempted first; the default relay proof starts only when connections remain pending. If direct connectivity succeeds during mining, work is cancelled. On credential expiry, compliant clients close their affected managed relay connections and obtain a new proof, retaining the channel and media tracks. Already-direct paths are retained. A prior deployment's 24-hour credentials remain valid until their own expiry; this gate does not retroactively revoke them. TURN credentials are bearer credentials and can be shared; PoW protects issuance, not every byte of traffic or credential redistribution. Cloudflare's server allocation cleanup semantics are separate from the client epoch boundary.
 
 On-device channel advanced settings accept a custom TURN URL list, username and password. These are held only in that page's channel map, are not included in signed channel descriptions or Waku messages, and bypass the default credential service and PoW. The panel never populates the built-in service's address or credentials; browser network inspection can still reveal the built-in endpoints.
 
-Initial timing measurement: desktop Chrome approximately 264k hashes/s, with 4x CPU throttling approximately 132k hashes/s (about 64 seconds expected at 23 bits). This is an emulator estimate, not a real-phone benchmark. PoW completion times are random and device dependent. Do not derive server difficulty from a client-provided benchmark.
+Initial timing measurement: desktop Chrome approximately 264k hashes/s, with 4x CPU throttling approximately 132k hashes/s (about 3.2 seconds expected at the current difficulty). This is an emulator estimate, not a real-phone benchmark. PoW completion times are random and device dependent. Do not derive server difficulty from a client-provided benchmark.
 
 Sources: https://developers.cloudflare.com/realtime/turn/generate-credentials/ and https://fleets.waku.org/data.json (fleet snapshot 2026-09-11).
 
@@ -159,3 +159,7 @@ npx wrangler pages deploy dist --project-name soft-room --branch codex/initial
 TURN Worker 允许两个公开站点来源和原有本地调试来源；地区识别继续使用访问站点的 `/cdn-cgi/trace`，沿用原有地区规则。静态部署不依赖开发电脑。
 
 `node tests/browser-channel-lifecycle.mjs` 验证返回后继续收发及采集、创建人开关、关闭目录、重开、切换频道和离开房间。可以通过 `STATIC_ORIGIN` 检查公开部署，通过 `BROWSER_PROXY` 指定测试浏览器网络。
+
+### iOS test app
+
+See [IOS.md](IOS.md) for Capacitor builds and free personal-device signing.

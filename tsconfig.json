@@ -21,6 +21,7 @@
     "src",
     "tests",
     "vite.config.ts",
-    "server"
+    "server",
+    "capacitor.config.ts"
   ]
 }
