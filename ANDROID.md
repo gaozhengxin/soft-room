@@ -2,11 +2,15 @@
 
 The Capacitor Android app bundles the web build. Waku, STUN, TURN, and the public site used for regional checks still require network access. Camera and microphone permissions are requested by the channel controls; the screen wake lock is released when the app is hidden.
 
+The built-in TURN Worker currently does not allow the Android Capacitor origin (`https://localhost`). Android can still use direct/STUN paths or a room's custom TURN setting, but cross-network channels that need the built-in relay may fail until that origin is approved and deployed.
+
 ## Release pipeline
 
 The shared `.github/workflows/release.yml` runs when a `v*` tag matching `package.json` is pushed. Its Android job builds a **signed** `Soft-Room-android.apk`, verifies its signature, and publishes it with a SHA-256 file alongside the unsigned iOS IPA. The release is private, so testers need repository access. The Android update button downloads the latest APK; Android still asks the user to confirm installation.
 
 Signing uses the stable `soft-room` key in `artifacts/android-release.p12` and password in `artifacts/android-release-password.txt` on the release maintainer's Mac. Both files are ignored by Git and have owner-only permissions. GitHub Actions has encrypted copies as `ANDROID_RELEASE_KEYSTORE_B64` and `ANDROID_RELEASE_STORE_PASSWORD`. **Back up these two local files securely.** Losing this key prevents seamless upgrades of installed APKs with the same app ID. Running `scripts/setup-android-signing.sh` again refuses to replace an existing key.
+
+Release signing certificate SHA-256: `20D0DA02512F9C722A686EE420E503F07C7AA3F28F3898DE636CF0A28C139249`. The successful CI `apksigner` check matched this fingerprint; it is the certificate fingerprint, not the APK file checksum.
 
 `versionName` and monotonically increasing `versionCode` come from the three-part version in `package.json`; bump it before each new tag. Do not publish an APK signed by a different key under the same app ID.
 
