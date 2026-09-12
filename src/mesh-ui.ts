@@ -9,6 +9,7 @@ import videoIcon from './icons/video.svg?raw';
 import radioIcon from './icons/radio.svg?raw';
 import backIcon from './icons/arrow-left.svg?raw';
 type Options={host:Element;button:HTMLButtonElement;t:(key:TextKey,params?:Record<string,string|number>)=>string;getMesh:()=>RoomMesh|undefined;canJoin:()=>boolean;name:(key:string)=>string;selfName:()=>string;isSelf:(key:string)=>boolean};
+const holdIcon=`<span class="hold-art" aria-hidden="true"><span class="hold-sage">${micIcon}</span><svg class="hold-patrol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"><path d="M32 5 39 23 57 30 39 37 32 57 25 37 7 30 25 23Z"/><path d="m14 49 36-36M19 52l33-33"/><circle cx="32" cy="30" r="7"/></svg><svg class="hold-beetle" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M32 30V10m0 8L21 9V4m11 14L43 9V4M24 28l-9-6m25 6 9-6"/><path d="M32 27c-12 0-20 9-20 20l10 12h20l10-12c0-11-8-20-20-20Z"/><path d="M32 29v28M15 43l13 5m21-5-13 5"/><path d="m27 35 5-4 5 4-5 5Z"/></svg></span>`;
 const modes:ChannelMode[]=['voice','video','walkie'];
 const modeKey=(mode:ChannelMode):TextKey=>mode==='video'?'channelVideo':mode==='walkie'?'channelWalkie':'channelVoice';
 const modeIcon=(mode:ChannelMode)=>mode==='video'?videoIcon:mode==='walkie'?radioIcon:micIcon;
@@ -129,7 +130,7 @@ export function mountMeshPanel(o:Options){
   $('channel-mic').hidden=mode==='walkie';$('channel-camera').hidden=mode!=='video';$('channel-hold').hidden=mode!=='walkie';
   labelButton('channel-mic',micIcon,mesh.localTracks.audio?'channelMicOff':'channelMicOn',!!mesh.localTracks.audio);
   labelButton('channel-camera',videoIcon,mesh.localTracks.video?'channelCameraOff':'channelCameraOn',!!mesh.localTracks.video);
-  labelButton('channel-hold',radioIcon,mesh.localTracks.audio?.enabled?'channelTalking':'channelHold',!!mesh.localTracks.audio?.enabled);
+  labelButton('channel-hold',holdIcon,mesh.localTracks.audio?.enabled?'channelTalking':'channelHold',!!mesh.localTracks.audio?.enabled);
   const peers=mesh.peerViews(),connected=peers.filter(p=>p.state==='connected').length;
   $('channel-connection').textContent=o.t(!peers.length?'channelNoPeers':connected===peers.length?'channelConnectionReady':connected?'channelConnectionPartial':peers.some(p=>p.state==='failed')?'channelConnectionFailed':'channelConnectionWaiting',{count:connected,total:peers.length});
   $<HTMLButtonElement>('channel-composer').querySelector('button')!.disabled=connected===0;

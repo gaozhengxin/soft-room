@@ -13,3 +13,21 @@
 #channel-turn-form>button[type=submit]{justify-self:start;width:auto;min-width:0;padding:10px 18px}
 
 .channel-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:8px 20px;font-size:12px}.channel-actions>span{margin-right:auto;color:var(--muted)}.channel-actions button{width:auto;padding:8px 12px;font-size:11px}.channel-card[data-enabled=false]{opacity:.65}
+
+/* A tactile push-to-talk control, with an emblem for each skin. */
+#channel-hold{--talk-accent:#46694f;position:relative;isolation:isolate;flex:none;flex-direction:column;width:144px;height:144px;min-height:144px;padding:19px 12px;border-radius:50%;gap:10px;border:1px solid #ffffffb0;background:linear-gradient(145deg,#f4f7f2,#d8e2d7);color:var(--talk-accent);box-shadow:8px 8px 18px #bac8bc,-8px -8px 18px #fff,inset 0 0 0 6px #ffffff40;transition:transform .15s,box-shadow .15s,background .15s}
+#channel-hold::before{content:'';position:absolute;inset:7px;border:1px solid currentColor;opacity:.2;border-radius:50%;pointer-events:none}
+#channel-hold>span:last-child{max-width:112px;font-size:11px;line-height:1.4;font-weight:650;pointer-events:none}
+#channel-hold .hold-art{display:grid;place-items:center;width:48px;height:48px;flex:none;pointer-events:none}
+#channel-hold .hold-art svg{width:48px;height:48px;display:block}
+#channel-hold .hold-sage svg{width:34px;height:34px;stroke-width:1.6}
+#channel-hold .hold-art .hold-patrol,#channel-hold .hold-art .hold-beetle{display:none}
+[data-theme=sssp] #channel-hold{--talk-accent:#a4462d;background:linear-gradient(145deg,#f5f6f6,#ccd6df);box-shadow:8px 8px 18px #b7c2cc,-8px -8px 18px #fff,inset 0 0 0 6px #b6533430;border-color:#f9fbff}
+[data-theme=sssp] #channel-hold .hold-sage,[data-theme=kabutack] #channel-hold .hold-sage{display:none}
+[data-theme=sssp] #channel-hold .hold-art .hold-patrol,[data-theme=kabutack] #channel-hold .hold-art .hold-beetle{display:block}
+[data-theme=kabutack] #channel-hold{--talk-accent:#fff1c1;background:linear-gradient(145deg,#de6254,#a92d32);border:3px solid #d5af63;box-shadow:8px 8px 18px #cec5bd,-8px -8px 18px #fffdf7,inset 2px 2px 5px #ffaf7a70}
+#channel-hold[aria-pressed=true]{background:var(--green);color:#fff;box-shadow:var(--inset),0 0 0 5px color-mix(in srgb,var(--green) 20%,transparent);transform:scale(.96)}
+#channel-hold[aria-pressed=true]::before{opacity:.6;animation:talk-ring 1.3s ease-in-out infinite}
+@keyframes talk-ring{50%{inset:3px;opacity:.15}}
+@media(max-height:700px){#channel-hold{width:112px;height:112px;min-height:112px;padding:12px 8px;gap:5px}#channel-hold .hold-art,#channel-hold .hold-art svg{width:36px;height:36px}#channel-hold>span:last-child{max-width:94px;font-size:10px}}
+@media(prefers-reduced-motion:reduce){#channel-hold{transition:none}#channel-hold[aria-pressed=true]{transform:none}#channel-hold[aria-pressed=true]::before{animation:none}}
