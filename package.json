@@ -1,6 +1,6 @@
 {
   "name": "soft-room",
-  "version": "1.0.1",
+  "version": "0.1.0",
   "description": "A tiny encrypted invitation room on Logos Messaging",
   "main": "index.js",
   "scripts": {
