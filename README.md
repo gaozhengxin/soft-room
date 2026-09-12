@@ -146,7 +146,7 @@ Sources: https://developers.cloudflare.com/realtime/turn/generate-credentials/ a
 
 ## Cloudflare 静态部署
 
-Pages 项目 `soft-room`，生产分支 `codex/initial`，默认地址 https://soft-room.pages.dev ，自定义域名 https://blink.wakukusmartrecipe.uk 。自定义域名需在 Cloudflare DNS 添加 CNAME `blink` → `soft-room.pages.dev` 并等待 Pages 验证和 HTTPS 证书生效。域名主站保持独立。
+Pages 项目 `soft-room`，生产分支 `codex/initial`，默认地址 https://soft-room.pages.dev ，自定义域名 https://soft.wakukusmartrecipe.uk 。自定义域名需在 Cloudflare DNS 添加 CNAME `soft` → `soft-room.pages.dev` 并等待 Pages 验证和 HTTPS 证书生效。域名主站保持独立。
 
 `.env.production` 只包含公开站点及 TURN Worker 地址，长期凭证留在 Worker Secrets。部署命令：
 
