@@ -7,3 +7,11 @@ export function sdpCandidates(sdp:string):RTCIceCandidateInit[]{
  });
 }
 export const candidateKey=(c:RTCIceCandidateInit)=>JSON.stringify([c.sdpMid,c.sdpMLineIndex,c.usernameFragment,c.candidate]);
+
+// Candidate updates keep these credentials; a rebuilt remote peer does not.
+export function sdpIceCredentials(sdp:string){
+ return JSON.stringify(sdp.split(/\r?\nm=/).map(part=>[
+  part.match(/(?:^|\n)a=ice-ufrag:([^\r\n]+)/)?.[1]||'',
+  part.match(/(?:^|\n)a=ice-pwd:([^\r\n]+)/)?.[1]||'',
+ ]));
+}

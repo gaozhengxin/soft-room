@@ -1,4 +1,4 @@
-import {sdpCandidates,candidateKey} from './ice-sdp.ts';
+import {sdpCandidates,candidateKey,sdpIceCredentials} from './ice-sdp.ts';
 import type {TurnAccessState} from './ice.ts';
 import {defaultIceServers} from './ice.ts';
 import {channelEnabled,setNetworkEnabled,validNetwork,createNetwork,randomId,parseSignal,validMembership,channelMode,type ChannelMode,type Membership,type Network,type MeshSignal} from './mesh-wire.ts';
@@ -210,7 +210,12 @@ export class RoomMesh {
    await p.pc.setRemoteDescription({type:'offer',sdp:s.sdp});if(this.current(p))await this.prepare(p,'answer');
   }else{
    if(key<this.self()||!p||p.id!==s.connection)return;
-   if(p.pc.remoteDescription){await this.addCandidates(p,s.sdp);return;}
+   if(p.pc.remoteDescription){
+    // The answerer may rebuild with TURN while our original offer is still being retried.
+    // New ICE credentials require a fresh offer, not addIceCandidate against the old answer.
+    if(sdpIceCredentials(p.pc.remoteDescription.sdp)!==sdpIceCredentials(s.sdp)){this.closePeer(key);this.tick();return;}
+    await this.addCandidates(p,s.sdp);return;
+   }
    if(p.pc.signalingState!=='have-local-offer'||p.busy)return;
    p.busy=true;try{await p.pc.setRemoteDescription({type:'answer',sdp:s.sdp});}finally{p.busy=false;}
   }
@@ -220,7 +225,7 @@ export class RoomMesh {
   if(this.iceConfiguration&&this.options.iceExpires&&this.options.iceExpires()<=this.now()){for(const [key,p] of this.peers)if(p.managedRelay&&p.usingRelay!==false)this.closePeer(key);this.iceConfiguration=undefined;}
   if(!this.iceConfiguration&&this.peers.size>0&&[...this.peers.values()].every(p=>p.channel?.readyState==='open')){if(this.iceFlight){this.options.cancelIce?.();this.iceVersion++;this.iceFlight=undefined;}return Promise.resolve();}
   if(this.iceFlight)return this.iceFlight;
-  if(!this.iceConfiguration&&![...this.attempts].some(([key,since])=>this.now()-since>25000&&this.peers.get(key)?.channel?.readyState!=='open'))return Promise.resolve();
+  if(!this.iceConfiguration&&![...this.attempts].some(([key,since])=>this.now()-since>5000&&this.peers.get(key)?.channel?.readyState!=='open'))return Promise.resolve();
   if(this.now()-this.iceCheckAt<1000)return Promise.resolve();this.iceCheckAt=this.now();
   const version=this.iceVersion;
   this.iceFlight=this.options.iceProvider().then(configuration=>{

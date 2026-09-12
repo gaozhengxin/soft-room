@@ -67,3 +67,13 @@ test('custom TURN remains local and bypasses the built-in provider even when dir
  const heartbeat=()=>mesh.receive({...seal(room,remote,0,'','',undefined,'heartbeat',membership).message,time:now});heartbeat();now+=27000;heartbeat();await Promise.resolve();
  assert.equal(calls,0);assert.ok(config?.iceServers?.some(s=>s.urls==='turns:relay.example:443'));assert.ok(!JSON.stringify(mesh.membership).includes('private-password'));assert.ok(!JSON.stringify(mesh.membership).includes('relay.example'));mesh.stop();
 });
+
+test('a blocked direct path requests TURN after five seconds',async()=>{
+ let now=Date.now(),calls=0;
+ const [local,remote]=[a,b].sort((x,y)=>x.publicKey.localeCompare(y.publicKey));
+ const mesh=new RoomMesh({room:roomId(room),identity:local,send:async()=>{},announce:()=>{},changed:()=>{},now:()=>now,iceProvider:async()=>{calls++;return {};},peerConnection:()=>{throw Error('Direct path unavailable');}});
+ mesh.join(network);
+ const heartbeat=()=>mesh.receive({...seal(room,remote,0,'','',undefined,'heartbeat',membership).message,time:now});
+ heartbeat();now+=4000;heartbeat();await Promise.resolve();assert.equal(calls,0);
+ now+=2000;heartbeat();await Promise.resolve();assert.equal(calls,1);mesh.stop();
+});

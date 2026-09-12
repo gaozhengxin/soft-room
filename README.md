@@ -118,7 +118,7 @@ The site stays static. `workers/turn` is a separate Cloudflare Worker which issu
 
 The default relay requires an identity-bound proof for each fixed two-hour UTC epoch. GET /challenge returns a server-authenticated deterministic challenge; POST /ice verifies its HMAC, epoch, difficulty, nonce and Ed25519 signature before calling Cloudflare. GET /ice is disabled. Difficulty is set by the Worker (TURN_POW_BITS=18.67807190511264, expected about 419,430 SHA256 attempts). The client mines in a dedicated Worker with cancellation and elapsed-time feedback; completed proofs are cached in sessionStorage for the current identity and epoch. Verification is fast and stateless, not a client-only delay.
 
-Credentials expire before the current epoch ends, with a 10-second issuance margin. Direct connectivity is attempted first; the default relay proof starts only when connections remain pending. If direct connectivity succeeds during mining, work is cancelled. On credential expiry, compliant clients close their affected managed relay connections and obtain a new proof, retaining the channel and media tracks. Already-direct paths are retained. A prior deployment's 24-hour credentials remain valid until their own expiry; this gate does not retroactively revoke them. TURN credentials are bearer credentials and can be shared; PoW protects issuance, not every byte of traffic or credential redistribution. Cloudflare's server allocation cleanup semantics are separate from the client epoch boundary.
+Credentials expire before the current epoch ends, with a 10-second issuance margin. Direct connectivity is attempted first; the default relay proof starts after five seconds when connections remain pending. If direct connectivity succeeds during mining, work is cancelled. On credential expiry, compliant clients close their affected managed relay connections and obtain a new proof, retaining the channel and media tracks. Already-direct paths are retained. A prior deployment's 24-hour credentials remain valid until their own expiry; this gate does not retroactively revoke them. TURN credentials are bearer credentials and can be shared; PoW protects issuance, not every byte of traffic or credential redistribution. Cloudflare's server allocation cleanup semantics are separate from the client epoch boundary.
 
 On-device channel advanced settings accept a custom TURN URL list, username and password. These are held only in that page's channel map, are not included in signed channel descriptions or Waku messages, and bypass the default credential service and PoW. The panel never populates the built-in service's address or credentials; browser network inspection can still reveal the built-in endpoints.
 
@@ -163,3 +163,13 @@ TURN Worker 允许两个公开站点来源和原有本地调试来源；地区�
 ### iOS test app
 
 See [IOS.md](IOS.md) for Capacitor builds and free personal-device signing.
+
+### TURN recovery checks
+
+A responder can rebuild its peer with TURN while the initiator is retransmitting an earlier offer. The resulting answer has new ICE credentials even though it references that same offer. The initiator must begin a fresh negotiation; feeding those candidates into the old remote description leaves ICE checking until the 45-second retry. Candidate-only updates keep using `addIceCandidate`.
+
+`node tests/browser-turn-negotiation.mjs` forces real Cloudflare relay pairs, uses independent identities/proofs, and deliberately releases the responder's configuration after its old answer was applied. Both peers must connect within 15 seconds after both configurations are ready and exchange a channel message. `TURN_TLS_ONLY=1 TURN_STAGGER=0 node tests/browser-turn-negotiation.mjs` restricts the test to TLS 443. WebKit is the default; `MESH_ENGINE=chromium` selects Chrome. These tests fulfill their local test pages in Playwright and do not start port 5173.
+
+`node tests/browser-turn-waku.mjs` serves the current `dist` through Playwright routes and checks the actual UI, public Waku signaling, independent TURN proofs, selected relay pairs and text in both directions. No LAN success can satisfy its forced-relay assertions.
+
+TURN credential requests allow 15 seconds. A rejected cached proof is renewed once immediately; repeated failure retains bounded backoff and appears in the channel. The Worker retries a transient provider error once after verifying the proof and recalculates TTL to keep credentials within that same epoch.

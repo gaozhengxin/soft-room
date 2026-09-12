@@ -54,3 +54,48 @@ test('fractional difficulty verifies work and remains bound to the server challe
  assert.ok(!verifyTurnProof({...proof,challenge:{...c,bits:4}},secret,now,4));
  for(const invalid of [NaN,Infinity,-Infinity,0,31])assert.throws(()=>challengeFor(user.publicKey,secret,now,invalid));
 });
+
+test('a rejected cached proof is renewed immediately without a thirty-second STUN-only fallback',async()=>{
+ const now=TURN_EPOCH_MS*200+1000,old=challengeFor(user.publicKey,secret,now,5);
+ const map=new Map([['soft-room/turn-proof',JSON.stringify(signTurnProof(old,solve(old),user.secret))]]);
+ const storage={getItem:(key:string)=>map.get(key)??null,setItem:(key:string,value:string)=>{map.set(key,value);},removeItem:(key:string)=>{map.delete(key);}} as Storage;
+ let posts=0,mined=0;
+ const request:typeof fetch=async(url,init)=>{
+  if(String(url).includes('/challenge'))return Response.json(challengeFor(user.publicKey,secret,now,4));
+  posts++;const proof=JSON.parse(String(init?.body));
+  return verifyTurnProof(proof,secret,now,4)?Response.json({iceServers:servers,expiresAt:now+600000}):new Response('Invalid proof',{status:403});
+ };
+ const provider=createIceProvider('https://turn.example/ice',request,()=>now,()=>user,()=>{},storage,async c=>{mined++;return solve(c);});
+ assert.equal((await provider()).iceServers?.length,2);assert.equal(provider.state.status,'ready');assert.equal(mined,1);assert.equal(posts,2);
+});
+
+test('repeated rejection has a bounded retry and reports failure',async()=>{
+ const now=TURN_EPOCH_MS*200+1000;let posts=0;
+ const provider=createIceProvider('https://turn.example/ice',async url=>{
+  if(String(url).includes('/challenge'))return Response.json(challengeFor(user.publicKey,secret,now,4));
+  posts++;return new Response('Forbidden',{status:403});
+ },()=>now,()=>user,()=>{},undefined,async c=>solve(c));
+ await provider();assert.equal(posts,2);assert.equal(provider.state.status,'error');
+ await provider();assert.equal(posts,2);
+});
+
+test('Worker retries a transient provider failure once after verifying proof',async()=>{
+ const c=challengeFor(user.publicKey,secret,Date.now(),4),proof=signTurnProof(c,solve(c),user.secret);let calls=0;
+ const result=await handle(req(proof),env,async()=>{calls++;return calls===1?new Response('Unavailable',{status:503}):Response.json({iceServers:servers});});
+ assert.equal(result.status,200);assert.equal(calls,2);
+ assert.ok((await result.json() as {expiresAt:number}).expiresAt<c.expiresAt);
+ calls=0;const permanent=await handle(req(proof),env,async()=>{calls++;return new Response('Unauthorized',{status:401});});
+ assert.equal(permanent.status,502);assert.equal(calls,1);
+});
+
+test('provider retries shorten the TTL instead of extending the authorized epoch',async t=>{
+ let now=TURN_EPOCH_MS*200+1000;t.mock.method(Date,'now',()=>now);
+ const c=challengeFor(user.publicKey,secret,now,4),proof=signTurnProof(c,solve(c),user.secret),ttls:number[]=[];
+ const response=await handle(req(proof),env,async(_url,options)=>{
+  ttls.push(JSON.parse(String(options?.body)).ttl);
+  if(ttls.length===1){now+=6000;return new Response('Unavailable',{status:503});}
+  return Response.json({iceServers:servers});
+ });
+ assert.equal(response.status,200);assert.equal(ttls[0]-ttls[1],6);
+ assert.equal((await response.json() as {expiresAt:number}).expiresAt,c.expiresAt-10000);
+});
