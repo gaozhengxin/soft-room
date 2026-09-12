@@ -68,9 +68,9 @@ npm run test:lan
 
 ## WebRTC 频道
 
-房间标题栏的“频道”入口打开频道卡片列表，列表没有独立加入/退出按钮。创建入口打开独立子页面，填写名称并选择纯语音、视频或对讲机；创建后直接进入频道。点击整张频道卡片也会进入。频道页覆盖房间聊天区，一次只参加一个频道；返回按钮、浏览器返回、切换房间或卸载页面会退出频道并释放采集设备。刷新后不会自动重新加入。创建者退出不解散其他参与者的连接。
+房间标题栏的“频道”入口打开频道卡片列表，列表没有独立加入/退出按钮。创建入口打开独立子页面，填写名称并选择纯语音、视频或对讲机；创建后直接进入频道。点击整张频道卡片也会进入。频道页覆盖房间聊天区，一次只参加一个频道；返回按钮和浏览器返回只收起频道页，继续保持频道连接和已经开启的媒体。点击「离开频道」、加入另一个频道、离开房间或卸载页面才退出并释放采集设备。刷新后不会自动重新加入。创建者普通退出不解散其他参与者；创建者主动关闭频道则停止该频道连接。
 
-`mesh-wire.ts` 定义创建者签名的网络描述，绑定随机网络 ID、房间 ID、名称、公钥。每个参与者在原有 5 秒隐藏心跳中携带该描述和新的加入实例 ID，只声明自己的参与状态。离开声明为 null，旧心跳不会覆盖较新的声明。网络发现依靠仍在参与的人重播自己的状态；没有服务端名册、历史读取或强一致性。30 秒没有声明且没有活跃直连时，参与者从网络视图中过期。
+`mesh-wire.ts` 定义创建者签名的网络描述，绑定随机网络 ID、房间 ID、名称、公钥。每个参与者在原有 5 秒隐藏心跳中携带该描述和新的加入实例 ID，只声明自己的参与状态。离开声明为 null，旧心跳不会覆盖较新的声明。频道 v3 描述额外签名绑定 enabled 和单调 revision，只有创建人可以开关；旧 revision 不会覆盖新状态。隐藏心跳最多携带四条已知频道公告，轮转传播，关闭状态也会被其他房间用户转发。当前页面按房间保留最多 64 个已知频道，离开房间再返回仍保留，刷新后清空。频道关闭后断开其 WebRTC 与采集设备；重新开启后成员需主动进入。没有服务端名册或强一致性，状态需要通过消息网络传播。30 秒没有声明且没有活跃直连时，参与者从在线频道人数中过期，频道卡片仍保留。
 
 `mesh.ts` 是独立于 DOM 的标准 WebRTC 模块。公钥字典序较小的一方发起 offer，每对成员只有一条 RTCPeerConnection。信令以 `kind: mesh` 通过现有 Waku 房间发送，依然做房间加密、Ed25519 签名、每日 PoW 和短时效检查。携带接收者、网络、双方加入实例和连接 ID，避免串网与旧连接回复。信令不进入聊天记录。首次协商最多等待 300 毫秒收集初始 ICE，之后每 3 秒重发最新 SDP 并补入迟到候选地址、未建成的连接每约 45 秒重试。退出、切房间及销毁时关闭连接。发送 Waku 信令时不占用 WebRTC 协商锁，避免发送确认尚未返回时丢弃应答。
 
@@ -143,3 +143,19 @@ Sources: https://developers.cloudflare.com/realtime/turn/generate-credentials/ a
 验证：`node tests/browser-history.mjs` 检查手机宽度的历史插入、新消息滚动保留及新连接从公网 Store 找回密文消息；`tests/history.test.ts` 检查历史认证、跨日 PoW 与在线状态隔离。
 
 频道连接回归：`node tests/browser-ice-delay.mjs` 使用真实 WebRTC 延迟 16 秒公开候选地址，旧版本超时，新版补发后连通并传输文字。`CHANNEL_CROSS_BROWSER=1 node tests/browser-channels.mjs` 检查 WebKit/Chrome 页面通过实际 Waku 完成三种频道模式的协商和文字传输（音视频采集另由默认 Chrome 测试覆盖）。
+
+## Cloudflare 静态部署
+
+Pages 项目 `soft-room-flash`，生产分支 `codex/initial`，默认地址 https://soft-room-flash.pages.dev ，自定义域名 https://flash.wakukusmartrecipe.uk 。自定义域名需在 Cloudflare DNS 添加 CNAME `flash` → `soft-room-flash.pages.dev` 并等待 Pages 验证和 HTTPS 证书生效。域名主站保持独立。
+
+`.env.production` 只包含公开站点及 TURN Worker 地址，长期凭证留在 Worker Secrets。部署命令：
+
+```sh
+npm run build
+npx wrangler deploy --config workers/turn/wrangler.jsonc
+npx wrangler pages deploy dist --project-name soft-room-flash --branch codex/initial
+```
+
+TURN Worker 允许两个公开站点来源和原有本地调试来源；地区识别继续使用访问站点的 `/cdn-cgi/trace`，沿用原有地区规则。静态部署不依赖开发电脑。
+
+`node tests/browser-channel-lifecycle.mjs` 验证返回后继续收发及采集、创建人开关、关闭目录、重开、切换频道和离开房间。可以通过 `STATIC_ORIGIN` 检查公开部署，通过 `BROWSER_PROXY` 指定测试浏览器网络。
