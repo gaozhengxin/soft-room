@@ -84,11 +84,11 @@ npm run test:mesh
 
 该测试使用三个独立 Chrome 会话、真实 Waku 公共服务节点和真实 WebRTC 数据通道，覆盖晚加入、三人全连接、创建者退出、重新加入、多网络隔离及刷新重入。与实体手机、iOS 原生容器验证分开报告。
 
-## 后续 Capacitor 封装
+## Capacitor 原生封装
 
 新组网模块仅用标准浏览器 API，没有 Node 服务、浏览器扩展 API、动态远程脚本或音视频权限依赖。Capacitor 核心库负责识别原生容器，`platform.ts` 使用 CapacitorHttp 执行原生地区查询，避免 `capacitor://localhost` 的跨域限制；浏览器继续使用同域 fetch。原生容器不会被第三方内置浏览器检查误拦，也不会由于本地 hostname 而跳过地区规则。
 
-封装时配置 `VITE_PUBLIC_ORIGIN=https://实际的Cloudflare域名` 并重新构建，作为地区查询和可分享邀请地址。缺失配置时原生地区检查失败关闭；邀请构造不会泄漏不可访问的 capacitor:// 地址，可退回原始邀请码。需按 Capacitor 流程添加 iOS 工程、同步 core 原生插件并配置网络权限/ATS；这里尚未创建 iOS 工程。WebKit 自动测试不等于 iPhone WKWebView 真机验证。
+封装时配置 `VITE_PUBLIC_ORIGIN=https://实际的Cloudflare域名` 并重新构建，作为地区查询和可分享邀请地址。缺失配置时原生地区检查失败关闭；邀请构造不会泄漏不可访问的原生容器地址，可退回原始邀请码。iOS 和 Android 工程已加入仓库，原生插件随构建同步。WebKit 自动测试不等于 iPhone 真机验证，Android 网页测试也不等于 Android 原生容器验收。
 
 iOS 后台可能暂停 JavaScript 和网络；不能保证锁屏常驻 mesh。当前在页面恢复可见后检查连接并恢复信令，后续封装需要接入 App 生命周期和邀请深链接；后台语音、来电与持久身份不在本轮范围内。
 
@@ -162,7 +162,7 @@ TURN Worker 允许两个公开站点来源和原有本地调试来源；地区�
 
 ### iOS test app
 
-See [IOS.md](IOS.md) for Capacitor builds and free personal-device signing.
+See [IOS.md](IOS.md) for iPhone builds and personal-device signing, and [ANDROID.md](ANDROID.md) for the signed APK release pipeline.
 
 ### TURN recovery checks
 

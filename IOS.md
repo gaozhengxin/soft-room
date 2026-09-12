@@ -4,7 +4,7 @@ The Capacitor app bundles the website locally. It does not need a running develo
 
 ## Release artifact
 
-Pushing a tag such as `v0.1.0` runs `.github/workflows/ios-release.yml` on GitHub's macOS 26 runner. The workflow checks that the tag matches `package.json`, builds the app without signing, verifies there is no embedded provisioning profile, and creates a GitHub Release containing `Soft-Room-unsigned.ipa` and its SHA-256 checksum. No Apple ID, certificate, provisioning profile, or private key is uploaded to GitHub. The release and source code require access to this private repository.
+Pushing a tag such as `v0.1.1` runs the shared `.github/workflows/release.yml`. Its iOS job uses GitHub's macOS 26 runner, checks that the tag matches `package.json`, builds without signing, and verifies there is no embedded provisioning profile. The GitHub Release contains `Soft-Room-unsigned.ipa` and its SHA-256 checksum alongside the signed Android APK. No Apple ID, certificate, provisioning profile, or private key is uploaded to GitHub. The release and source code require access to this private repository.
 
 The unsigned IPA is **not installable**. Each tester signs it for their own device with a compatible sideloading tool and their own Apple ID. Alternatively, testers can download the release source and build/install it through Xcode. Xcode signs a project build; it does not directly sign a downloaded IPA.
 

@@ -15,7 +15,9 @@
     "test:channels": "node tests/browser-channels.mjs",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
-    "ios:ipa": "npm run ios:sync && bash scripts/build-ios-unsigned.sh"
+    "ios:ipa": "npm run ios:sync && bash scripts/build-ios-unsigned.sh",
+    "android:sync": "npm run build && cap sync android",
+    "android:open": "cap open android"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +25,7 @@
   "type": "module",
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.5.1",
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "8.5.1",
     "@noble/ciphers": "^2.4.0",
