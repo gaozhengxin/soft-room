@@ -4,7 +4,7 @@
   "compatibility_date": "2026-09-11",
   "workers_dev": true,
   "vars": {
-    "ALLOWED_ORIGINS": "https://127.0.0.1:5173,https://localhost:5173,https://192.168.2.112:5173,capacitor://localhost,https://flash.wakukusmartrecipe.uk,https://soft-room-flash.pages.dev",
+    "ALLOWED_ORIGINS": "https://127.0.0.1:5173,https://localhost:5173,https://192.168.2.112:5173,capacitor://localhost,https://blink.wakukusmartrecipe.uk,https://soft-room.pages.dev",
     "TURN_POW_BITS": "23"
   },
   "ratelimits": [

@@ -146,14 +146,14 @@ Sources: https://developers.cloudflare.com/realtime/turn/generate-credentials/ a
 
 ## Cloudflare 静态部署
 
-Pages 项目 `soft-room-flash`，生产分支 `codex/initial`，默认地址 https://soft-room-flash.pages.dev ，自定义域名 https://flash.wakukusmartrecipe.uk 。自定义域名需在 Cloudflare DNS 添加 CNAME `flash` → `soft-room-flash.pages.dev` 并等待 Pages 验证和 HTTPS 证书生效。域名主站保持独立。
+Pages 项目 `soft-room`，生产分支 `codex/initial`，默认地址 https://soft-room.pages.dev ，自定义域名 https://blink.wakukusmartrecipe.uk 。自定义域名需在 Cloudflare DNS 添加 CNAME `blink` → `soft-room.pages.dev` 并等待 Pages 验证和 HTTPS 证书生效。域名主站保持独立。
 
 `.env.production` 只包含公开站点及 TURN Worker 地址，长期凭证留在 Worker Secrets。部署命令：
 
 ```sh
 npm run build
 npx wrangler deploy --config workers/turn/wrangler.jsonc
-npx wrangler pages deploy dist --project-name soft-room-flash --branch codex/initial
+npx wrangler pages deploy dist --project-name soft-room --branch codex/initial
 ```
 
 TURN Worker 允许两个公开站点来源和原有本地调试来源；地区识别继续使用访问站点的 `/cdn-cgi/trace`，沿用原有地区规则。静态部署不依赖开发电脑。
