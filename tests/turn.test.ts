@@ -45,3 +45,12 @@ test('completed proof survives a refresh within the same session and epoch',asyn
  const make=()=>createIceProvider('https://turn.example/ice',request,()=>now,()=>user,()=>{},storage,async c=>{mined++;return solve(c);});
  await make()();await make()();assert.equal(mined,1);
 });
+
+test('fractional difficulty verifies work and remains bound to the server challenge',()=>{
+ const now=TURN_EPOCH_MS*100+1000,bits=4.5,c=challengeFor(user.publicKey,secret,now,bits);
+ const proof=signTurnProof(c,solve(c),user.secret);
+ assert.ok(verifyTurnProof(proof,secret,now,bits));
+ assert.ok(!verifyTurnProof(proof,secret,now,4));
+ assert.ok(!verifyTurnProof({...proof,challenge:{...c,bits:4}},secret,now,4));
+ for(const invalid of [NaN,Infinity,-Infinity,0,31])assert.throws(()=>challengeFor(user.publicKey,secret,now,invalid));
+});

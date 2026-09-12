@@ -5,7 +5,7 @@
   "workers_dev": true,
   "vars": {
     "ALLOWED_ORIGINS": "https://127.0.0.1:5173,https://localhost:5173,https://192.168.2.112:5173,capacitor://localhost,https://soft.wakukusmartrecipe.uk,https://soft-room.pages.dev",
-    "TURN_POW_BITS": "23"
+    "TURN_POW_BITS": "18.67807190511264"
   },
   "ratelimits": [
     {
