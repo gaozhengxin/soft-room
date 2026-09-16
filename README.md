@@ -138,6 +138,8 @@ Sources: https://developers.cloudflare.com/realtime/turn/generate-credentials/ a
 
 图片、视频、音频、PDF 和 Markdown 可以在房间消息中打开；其他文件只提供下载。每张附件卡都有明显的“下载原文件”按钮。原文件始终完整保留；图片可生成均衡或节省流量的 WebP 预览。浏览器支持 `MediaRecorder` 和 `captureStream()` 时，五分钟以内的音视频可按均衡（视频约 1.5 Mbps、音频 96 kbps）或节省流量（视频约 600 kbps、音频 64 kbps）生成预览；不支持、时长超限或预览反而更大时自动使用原文件。预览和原文件都单独加密。
 
+兼容路径按能力检测而不是手机 UA 分支：支持 `createImageBitmap` 的浏览器优先使用它，iOS WebKit 等不可用或解码失败时回退到原生 `<img>` 解码再绘制 Canvas。普通浏览器使用 Blob 下载；Capacitor 原生容器在 Web Share 文件能力可用时优先打开系统分享/“存储到文件”面板，不可用时回退到标准下载。音视频转码 API 不可用时仍可上传、播放和下载原文件。当前加密和解密仍会把一个完整对象放入页面内存；接近 190 MiB 的文件需要实体 Android/iOS 做内存压力验收，后续若要稳定支持大文件应升级为分块加密格式。
+
 当前公网入口是 `https://storage.wakukusmartrecipe.uk`，由 Cloudflare Tunnel 代理到 Mac mini 的 `127.0.0.1:8788`，源站不直接暴露公网端口。Storage Manager 源码在 [`services/storage-manager`](services/storage-manager)，部署密钥只保存在 Mac mini 的 `.env`，不进入静态包或仓库。
 
 ## 聊天历史
