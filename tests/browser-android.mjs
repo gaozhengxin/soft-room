@@ -7,7 +7,7 @@ const root=new URL('../dist/',import.meta.url).pathname;
 const browser=await chromium.launch({channel:'chrome',headless:true});
 const context=await browser.newContext({...devices['Pixel 7'],permissions:['clipboard-read','clipboard-write']});
 await context.addInitScript(()=>{
- for(const [owner,key] of [[Promise,'withResolvers'],[Promise,'any'],[AbortSignal,'timeout'],[AbortSignal,'any'],[Object,'hasOwn'],[Array.prototype,'at'],[crypto,'randomUUID']])Object.defineProperty(owner,key,{value:undefined,writable:true,configurable:true});
+ for(const [owner,key] of [[Promise,'withResolvers'],[Promise,'any'],[Promise,'try'],[AbortSignal,'timeout'],[AbortSignal,'any'],[Object,'hasOwn'],[Array.prototype,'at'],[Uint8Array,'fromBase64'],[URL,'parse'],[crypto,'randomUUID']])Object.defineProperty(owner,key,{value:undefined,writable:true,configurable:true});
 });
 const page=await context.newPage(),errors=[];
 page.on('pageerror',error=>errors.push(error.message));

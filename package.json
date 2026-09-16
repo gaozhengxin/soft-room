@@ -1,6 +1,6 @@
 {
   "name": "soft-room",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A tiny encrypted invitation room on Logos Messaging",
   "main": "index.js",
   "scripts": {
@@ -15,6 +15,7 @@
     "test:channels": "node tests/browser-channels.mjs",
     "test:files": "node tests/browser-files.mjs",
     "test:media": "node tests/browser-media-preview.mjs",
+    "test:pdf": "node tests/browser-pdf.mjs",
     "test:android": "node tests/browser-android.mjs",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
@@ -36,7 +37,8 @@
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
     "@waku/core": "0.0.40",
-    "@waku/sdk": "^0.0.36"
+    "@waku/sdk": "^0.0.36",
+    "pdfjs-dist": "^5.4.624"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.1",

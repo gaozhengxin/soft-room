@@ -11,6 +11,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        registerPlugin(NativeFilesPlugin.class);
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT >= 35) {
             View content = findViewById(android.R.id.content);

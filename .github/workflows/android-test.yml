@@ -54,4 +54,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" \
-            --notes "Android test build. Fixes native viewport and system-bar insets, sidebar touch handling, room-specific invitation copying, and compatibility with Android System WebView versions missing newer APIs used by Waku/libp2p. This prerelease does not replace the stable update channel."
+            --notes "Android test build. Uses the system file picker to save decrypted original attachments and renders PDF previews inside the room with PDF.js. It also retains the viewport, sidebar touch, invitation, and older Android System WebView compatibility fixes from previous test builds. This prerelease does not replace the stable update channel."
