@@ -14,6 +14,7 @@
     "test:mesh:engine": "node tests/browser-mesh-engine.mjs",
     "test:channels": "node tests/browser-channels.mjs",
     "test:files": "node tests/browser-files.mjs",
+    "test:media": "node tests/browser-media-preview.mjs",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
     "ios:ipa": "npm run ios:sync && bash scripts/build-ios-unsigned.sh",
