@@ -1,6 +1,6 @@
 {
   "name": "soft-room",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A tiny encrypted invitation room on Logos Messaging",
   "main": "index.js",
   "scripts": {
@@ -13,6 +13,7 @@
     "test:mesh": "node tests/browser-mesh.mjs",
     "test:mesh:engine": "node tests/browser-mesh-engine.mjs",
     "test:channels": "node tests/browser-channels.mjs",
+    "test:files": "node tests/browser-files.mjs",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
     "ios:ipa": "npm run ios:sync && bash scripts/build-ios-unsigned.sh",

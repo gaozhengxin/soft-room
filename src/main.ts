@@ -11,6 +11,7 @@ import userIcon from './icons/user-round.svg?raw';
 import peopleIcon from './icons/users-round.svg?raw';
 import settingsIcon from './icons/settings.svg?raw';
 import downloadIcon from './icons/download.svg?raw';
+import paperclipIcon from './icons/paperclip.svg?raw';
 import './style.css';
 import './sssp.css';
 import './layout.css';
@@ -22,6 +23,9 @@ import { loadSession, saveSession, freshSession, SESSION_KEY, type SavedRoom } f
 import { translate, type TextKey, type Language } from './i18n.ts';
 import {observeMember,online,HEARTBEAT_INTERVAL,type Member} from './members.ts';
 import { connect } from './transport.ts';
+import {shareFile,type MediaQuality} from './attachments.ts';
+import {attachmentView} from './attachment-ui.ts';
+import {backupMessage,storageHistory,type UploadProgress} from './storage.ts';
 const $ = <T extends HTMLElement = HTMLElement>(id:string) => document.getElementById(id) as T;
 let storage:Storage|undefined;
 try {storage=window.sessionStorage;} catch { /* Memory-only fallback. */ }
@@ -38,7 +42,7 @@ let heartbeatFlight:Promise<void>|undefined,lastHeartbeatAttempt=0;
 const seenIds=new Map<string,Set<string>>();
 let active:SavedRoom|undefined,connection:Awaited<ReturnType<typeof connect>>|undefined;
 let mesh:RoomMesh|undefined;
-let generation=0,busy=false,sending=false,controller:AbortController|undefined;
+let generation=0,busy=false,sending=false,fileSending=false,controller:AbortController|undefined;
 let statusKey:TextKey='idle',noticeKey:TextKey|undefined,copyValue:string|undefined;
 let writeController:AbortController|undefined,writeBusy=false,writePaused=false;
 let progress:WorkProgress={attempts:0,elapsed:0};
@@ -60,7 +64,7 @@ $('app').innerHTML=`<div class="shell">
 <div id="history-status" class="history-status" role="status" hidden><i aria-hidden="true"></i><span></span><button id="history-retry" type="button" data-i18n="retry"></button></div>
 <div id="messages" class="messages" role="log" data-label="messages" aria-live="polite"></div>
 <section id="pow-wait" class="pow-wait" aria-busy="true" hidden><div class="pow-orbit" aria-hidden="true"><span>✳</span></div><h3 id="pow-title"></h3><p id="pow-description"></p><div class="pow-track" role="progressbar" data-label="powTitle"><i></i></div><div class="pow-stats"><div><b id="pow-time">0</b><small data-i18n="elapsed"></small></div></div><p class="pow-explanation" data-i18n="powTiming"></p><p class="footnote" id="pow-cache"></p><button id="cancel-work" data-i18n="cancel"></button></section>
-<button id="resume-work" data-i18n="resumeWork" hidden></button><div id="notice" class="notice" role="status" aria-live="polite"></div><form id="composer" class="composer"><label class="sr-only" for="message" data-i18n="messageLabel"></label><textarea id="message" rows="1" maxlength="2000" disabled></textarea><button id="send" class="send" disabled data-label="send">↑</button></form><div class="chat-foot"><span data-i18n="encrypted"></span><span data-i18n="keyboard"></span></div><p class="history-note" data-i18n="historyHint"></p>
+<button id="resume-work" data-i18n="resumeWork" hidden></button><div id="notice" class="notice" role="status" aria-live="polite"></div><form id="composer" class="composer"><button id="attach" type="button" class="icon-button attach-button" data-label="fileShare">${paperclipIcon}</button><label class="sr-only" for="message" data-i18n="messageLabel"></label><textarea id="message" rows="1" maxlength="2000" disabled></textarea><button id="send" class="send" disabled data-label="send">↑</button></form><div class="chat-foot"><span data-i18n="encrypted"></span><span data-i18n="keyboard"></span></div><p class="history-note" data-i18n="historyHint"></p>
 </section></main><footer><span data-i18n="footer"></span><span data-i18n="footerMark"></span></footer></div>`;
 // Reuse the existing controls in scoped panels; the chat remains the main surface.
 const shell=document.querySelector('.shell')!;
@@ -100,6 +104,8 @@ const membersPanel=makeDialog('members-dialog','members');
 membersPanel.innerHTML='<p id="members-room" class="scope-title"></p><div id="members-list"></div>';
 const sharePanel=makeDialog('share-dialog','shareRoom');
 sharePanel.innerHTML='<h3 id="share-name"></h3><p class="scope-hint" data-i18n="invitationTip"></p><label for="share-link" data-i18n="inviteLabel"></label><textarea id="share-link" readonly rows="4"></textarea><button id="share-copy" class="primary" data-i18n="copy"></button><p id="share-feedback" role="status"></p><p class="scope-hint" data-i18n="roomsHint"></p>';
+const filePanel=makeDialog('file-dialog','fileShare');
+filePanel.innerHTML='<form id="file-form"><label for="file-input" data-i18n="fileChoose"></label><input id="file-input" type="file"/><label for="file-quality" data-i18n="fileQuality"></label><select id="file-quality"><option value="original" data-i18n="fileQualityOriginal"></option><option value="balanced" data-i18n="fileQualityBalanced"></option><option value="compact" data-i18n="fileQualityCompact"></option></select><p class="scope-hint" data-i18n="fileQualityHint"></p><button id="file-submit" class="primary" data-i18n="fileSend"></button><progress id="file-progress" max="1" value="0" hidden></progress><p id="file-feedback" role="status"></p></form>';
 const sidebar=document.querySelector<HTMLElement>('.controls')!;
 const manager=document.querySelector('.room-manager')!;
 const brand=document.querySelector('.brand')!;
@@ -193,6 +199,7 @@ function controls(){
  $('join-button').toggleAttribute('disabled',busy);
  const ready=!!connection?.connected()&&!!active&&canWrite(active);
  $('send').toggleAttribute('disabled',!ready||sending);
+ $('attach').toggleAttribute('disabled',!ready||fileSending);
  $('message').toggleAttribute('disabled',!ready);
  $('message').setAttribute('placeholder',t(ready?'messagePlaceholder':'messageDisabled'));
  $('room-tools').hidden=!active;
@@ -234,7 +241,9 @@ function renderMessages(){
   if(m.kind==='heartbeat')continue;
   const own=m.sender===session.identity.publicKey,row=document.createElement('article');row.className='message-row'+(own?' own':'');row.dataset.message=m.id;
   const meta=document.createElement('div');meta.className='meta';meta.textContent=`${m.nickname?m.nickname+' · '+m.sender.slice(0,8):t('visitor',{id:m.sender.slice(0,8)})}${own?' · '+t('you'):''}  ${new Date(m.time).toLocaleTimeString(session.language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'})}`;
-  const bubble=document.createElement('p');bubble.textContent=m.text;row.append(meta,bubble);log.append(row);
+  row.append(meta);
+  if(m.kind==='file'&&m.file)row.append(attachmentView(active!.room,m.file,t));else{const bubble=document.createElement('p');bubble.textContent=m.text;row.append(bubble);}
+  log.append(row);
  }
  restore();
 }
@@ -242,16 +251,16 @@ function renderHistory(){const el=$('history-status');el.hidden=historyState==='
 $('history-retry').onclick=()=>{if(active&&connection)void loadHistory(active,connection,generation);};
 async function loadHistory(saved:SavedRoom,transport:NonNullable<typeof connection>,current:number){
  historyState='loading';renderHistory();
- try{await transport.history(payloads=>{
+ const accept=(payloads:Uint8Array[])=>{
   if(current!==generation)return;
   const id=roomId(saved.room),messages=histories.get(id)||[],known=new Set(messages.map(m=>m.id));
   const members=membersByRoom.get(id)||new Map<string,Member>();
   for(const payload of payloads){try{const m=openHistory(saved.room,payload);if(known.has(m.id))continue;known.add(m.id);messages.push(m);observeMember(members,m);}catch{ /* Historical text must authenticate independently of live freshness. */ }}
   messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));
   histories.set(id,messages.slice(-1000));membersByRoom.set(id,members);renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();
- });if(current===generation)historyState='idle';}
- catch{if(current===generation)historyState='error';}
- finally{if(current===generation)renderHistory();}
+ };
+ const outcomes=await Promise.allSettled([transport.history(accept),storageHistory(roomId(saved.room),accept,controller?.signal)]);
+ if(current===generation){historyState=outcomes.some(item=>item.status==='fulfilled')?'idle':'error';renderHistory();}
 }
 function languageChanged(){
  renderHistory();
@@ -353,10 +362,12 @@ $('composer').addEventListener('submit',async event=>{
  event.preventDefault();const input=$<HTMLTextAreaElement>('message');if(!active||!connection||sending||!input.value.trim())return;
  if(!canWrite(active)){writePaused=false;void prepareWrite();return;}
  const current=generation,saved=active,body=input.value;sending=true;controls();
- try{await heartbeatFlight;if(current!==generation)return;const packet=seal(saved.room,session.identity,saved.nonce!,body,effectiveName(session.name,saved.nickname),saved.epoch);await connection.send(packet.payload,true);if(current!==generation)return;addMessage(saved,packet.message);if(input.value===body)input.value='';notice('sent');}
+ try{await heartbeatFlight;if(current!==generation)return;const packet=seal(saved.room,session.identity,saved.nonce!,body,effectiveName(session.name,saved.nickname),saved.epoch);await connection.send(packet.payload,true);void backupMessage(roomId(saved.room),packet.payload).catch(()=>{});if(current!==generation)return;addMessage(saved,packet.message);if(input.value===body)input.value='';notice('sent');}
  catch{if(current===generation)notice('sendFailed');}finally{if(current===generation){sending=false;controls();input.focus();}}
 });
 $('message').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();$<HTMLFormElement>('composer').requestSubmit();}});
+$('attach').onclick=()=>{if(active&&connection?.connected()&&canWrite(active)){$<HTMLFormElement>('file-form').reset();$('file-feedback').textContent='';$<HTMLProgressElement>('file-progress').hidden=true;showPanel('file-dialog');}else notice('fileNeedRoom');};
+$<HTMLFormElement>('file-form').onsubmit=event=>{event.preventDefault();void(async()=>{const saved=active,current=generation,file=$<HTMLInputElement>('file-input').files?.[0],button=$<HTMLButtonElement>('file-submit'),bar=$<HTMLProgressElement>('file-progress');if(!saved||!connection?.connected()||!canWrite(saved)||!file||fileSending)return;fileSending=true;button.disabled=true;bar.hidden=false;controls();const show=(value:UploadProgress)=>{bar.value=value.total?value.loaded/value.total:0;const key=value.phase==='processing'?'fileProcessing':value.phase==='encrypting'?'fileEncrypting':'fileUploading';$('file-feedback').textContent=t(key,{percent:Math.round(bar.value*100)});};try{const attachment=await shareFile(saved.room,file,$<HTMLSelectElement>('file-quality').value as MediaQuality,show);if(current!==generation||active!==saved||!connection?.connected())throw Error('Room changed');const packet=seal(saved.room,session.identity,saved.nonce!,'',effectiveName(session.name,saved.nickname),saved.epoch,'file',undefined,undefined,attachment);await connection.send(packet.payload,true);void backupMessage(roomId(saved.room),packet.payload).catch(()=>{});addMessage(saved,packet.message);$<HTMLDialogElement>('file-dialog').close();notice('fileSent');}catch{$('file-feedback').textContent=t('fileFailed');}finally{fileSending=false;button.disabled=false;controls();}})();};
 function checkDay(){
  if(!connection||!active)return;
  if(!connection.connected()){statusKey='disconnected';controls();return;}

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { makeRoom,makeIdentity,invite,parseInvite,seal,open,solveWork,validWork,roomId,STRONG_TARGET,expectedAttempts,meetsTarget,workChecker,type Room } from '../src/protocol.ts';
+import { makeRoom,makeIdentity,invite,parseInvite,seal,open,openHistory,solveWork,validWork,roomId,STRONG_TARGET,expectedAttempts,meetsTarget,workChecker,type Attachment,type Room } from '../src/protocol.ts';
 const fixture=JSON.parse(readFileSync(new URL('./fixtures/strong.json',import.meta.url),'utf8'));
 const room=fixture.room as Room;
 const identity={secret:new Uint8Array(32).fill(34),publicKey:fixture.publicKey};
@@ -46,4 +46,11 @@ test('room nickname is signed and encrypted; missing nickname stays compatible',
  const m=open(r,seal(r,i,0,'hello','  小明 Alice  ').payload);assert.equal(m.nickname,'小明 Alice');assert.equal(m.sender,i.publicKey);
  assert.equal(open(r,seal(r,i,0,'old message').payload).nickname,undefined);
  assert.throws(()=>seal(r,i,0,'hi','x'.repeat(25)));assert.throws(()=>seal(r,i,0,'hi','a\nb'));
+});
+test('file references are encrypted, signed, bounded and available in history',()=>{
+ const r=makeRoom('files',false),i=makeIdentity(),file:Attachment={v:1,name:'报告.pdf',mime:'application/pdf',bytes:1234,media:'pdf',quality:'original',original:{id:'a'.repeat(64),size:1275}};
+ const packet=seal(r,i,0,'','',undefined,'file',undefined,undefined,file);
+ assert.deepEqual(open(r,packet.payload).file,file);assert.deepEqual(openHistory(r,packet.payload,packet.message.time+1000).file,file);
+ assert.throws(()=>seal(r,i,0,'caption','',undefined,'file',undefined,undefined,file));
+ assert.throws(()=>seal(r,i,0,'','',undefined,'file',undefined,undefined,{...file,name:'bad\nname'}));
 });

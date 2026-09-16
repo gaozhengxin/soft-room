@@ -7,7 +7,8 @@ const utf8 = new TextEncoder();
 const text = new TextDecoder('utf-8', { fatal: true });
 export type Room = { v: 1 | 2; key: string; seed?: string; name: string; pow: 0 | 16 | 20 | 1000 };
 export type Identity = { secret: Uint8Array; publicKey: string };
-export type Message = { v: 1; room: string; id: string; sender: string; nonce: number; kind?: 'heartbeat'|'mesh'; mesh?:Membership|null;channels?:Network[]; epoch?: number; time: number; text: string; nickname?: string };
+export type Attachment={v:1;name:string;mime:string;bytes:number;media:'image'|'video'|'audio'|'pdf'|'markdown'|'file';quality:'original'|'balanced'|'compact';original:{id:string;size:number};preview?:{id:string;size:number;mime:string}};
+export type Message = { v: 1; room: string; id: string; sender: string; nonce: number; kind?: 'heartbeat'|'mesh'|'file'; file?:Attachment;mesh?:Membership|null;channels?:Network[]; epoch?: number; time: number; text: string; nickname?: string };
 export const makeIdentity = (): Identity => { const secret = randomBytes(32); return { secret, publicKey: bytesToHex(ed25519.getPublicKey(secret)) }; };
 export const shortName = (key: string) => `旅人 ${key.slice(0, 8)}`;
 export function makeRoom(name: string, pow: boolean): Room { return { v: pow ? 2 : 1, key: pow ? '' : bytesToHex(randomBytes(32)), ...(pow ? {seed:bytesToHex(randomBytes(32))} : {}), name: name.trim().slice(0, 32) || '随便聊聊', pow: pow ? 20 : 0 }; }
@@ -79,13 +80,15 @@ export function normalizeNickname(value:string):string {
   if(name.length>24 || /[\u0000-\u001f\u007f]/.test(name))throw Error('Invalid nickname');
   return name;
 }
-export function seal(r: Room, identity: Identity, nonce: number, body: string, nickname = '', epoch=dayEpoch(),kind?:'heartbeat'|'mesh',mesh?:Membership|null,channels?:Network[]): { message: Message; payload: Uint8Array } {
-  if ((kind!=='heartbeat'&&!body.trim()) || body.length > (kind==='mesh'?12000:2000)) throw Error('消息需为 1–2000 个字符。');
+export function validAttachment(file:unknown):file is Attachment{const f=file as Attachment,ref=(value:unknown)=>{const r=value as {id:string;size:number};return !!r&&/^[a-f0-9]{64}$/.test(r.id)&&Number.isSafeInteger(r.size)&&r.size>0&&r.size<=200*1024*1024;};return !!f&&f.v===1&&typeof f.name==='string'&&!!f.name&&f.name.length<=160&&!/[\u0000-\u001f\u007f]/.test(f.name)&&typeof f.mime==='string'&&f.mime.length<=100&&Number.isSafeInteger(f.bytes)&&f.bytes>0&&f.bytes<=190*1024*1024&&['image','video','audio','pdf','markdown','file'].includes(f.media)&&['original','balanced','compact'].includes(f.quality)&&ref(f.original)&&(!f.preview||(ref(f.preview)&&typeof f.preview.mime==='string'&&f.preview.mime.length<=100));}
+export function seal(r: Room, identity: Identity, nonce: number, body: string, nickname = '', epoch=dayEpoch(),kind?:'heartbeat'|'mesh'|'file',mesh?:Membership|null,channels?:Network[],file?:Attachment): { message: Message; payload: Uint8Array } {
+  if ((kind!=='heartbeat'&&kind!=='file'&&!body.trim()) || body.length > (kind==='mesh'?12000:2000)||kind==='file'&&(!validAttachment(file)||body!=='')) throw Error('消息内容无效。');
   const message: Message = {v:1,room:roomId(r),id:bytesToHex(randomBytes(16)),sender:identity.publicKey,nonce,time:Date.now(),text:kind==='heartbeat'?'':body.trim(),...(kind?{kind}:{})};
   if(r.v===2){if(epoch!==dayEpoch() || !validWork(r,identity.publicKey,nonce,epoch))throw Error('Invalid work');message.epoch=epoch;}
   if(mesh!==undefined){if(kind!=='heartbeat'||(mesh!==null&&!validMembership(mesh,roomId(r))))throw Error('Invalid membership');message.mesh=mesh;}
   if(channels!==undefined){if(kind!=='heartbeat'||channels.length>4||channels.some(n=>!validNetwork(n,roomId(r))))throw Error('Invalid channels');message.channels=channels;}
   if(kind==='mesh')parseSignal(body.trim());
+  if(kind==='file')message.file=file;
   const name=normalizeNickname(nickname);if(name)message.nickname=name;
   const signed = JSON.stringify(message);
   const plaintext = utf8.encode(JSON.stringify({body:signed,signature:bytesToHex(ed25519.sign(utf8.encode(signed),identity.secret))}));
@@ -104,8 +107,10 @@ function decodeMessage(r: Room, payload: Uint8Array, now: number, historical:boo
   const envelope = JSON.parse(text.decode(plain));
   if (typeof envelope.body !== 'string' || !/^[a-f0-9]{128}$/.test(envelope.signature)) throw Error('Invalid envelope');
   const m = JSON.parse(envelope.body) as Message;
-  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || (m.kind!=='heartbeat'&&!m.text.trim()) || m.text.length > (m.kind==='mesh'?12000:2000) || !Number.isSafeInteger(m.time) || (historical ? now-m.time>HISTORY_WINDOW || m.time-now>5000 || m.kind!==undefined : Math.abs(now-m.time)>300000)) throw Error('Invalid message');
-  if(m.kind!==undefined&&m.kind!=='heartbeat'&&m.kind!=='mesh')throw Error('Invalid kind');
+  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || (m.kind!=='heartbeat'&&m.kind!=='file'&&!m.text.trim()) || m.text.length > (m.kind==='mesh'?12000:2000) || !Number.isSafeInteger(m.time) || (historical ? now-m.time>HISTORY_WINDOW || m.time-now>5000 || ![undefined,'file'].includes(m.kind) : Math.abs(now-m.time)>300000)) throw Error('Invalid message');
+  if(m.kind!==undefined&&m.kind!=='heartbeat'&&m.kind!=='mesh'&&m.kind!=='file')throw Error('Invalid kind');
+  if(m.kind==='file'&&(m.text!==''||!validAttachment(m.file)))throw Error('Invalid file');
+  if(m.kind!=='file'&&m.file!==undefined)throw Error('Invalid file');
   if(m.kind==='heartbeat'&&(m.text!==''||now-m.time>=30000||m.time-now>5000))throw Error('Invalid heartbeat');
   if(m.mesh!==undefined&&(m.kind!=='heartbeat'||(m.mesh!==null&&!validMembership(m.mesh,m.room))))throw Error('Invalid membership');
   if(m.channels!==undefined&&(m.kind!=='heartbeat'||!Array.isArray(m.channels)||m.channels.length>4||m.channels.some(n=>!validNetwork(n,m.room))))throw Error('Invalid channels');

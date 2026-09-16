@@ -1,6 +1,6 @@
 # Soft Room
 
-一个可直接部署到 Cloudflare Pages 的纯静态加密聊天室。Vanilla TypeScript + Vite，无运行时 Node 后端。三套新拟物皮肤，中英文、桌面折叠侧栏和手机抽屉。界面图标优先使用 Lucide。
+一个可直接部署到 Cloudflare Pages 的加密聊天室前端。Vanilla TypeScript + Vite，页面本身仍是纯静态文件；聊天使用 Logos Messaging，历史托底和加密附件使用单独的 Storage Manager。三套新拟物皮肤，中英文、桌面折叠侧栏和手机抽屉。界面图标优先使用 Lucide。
 
 ## 本地运行与部署
 
@@ -12,7 +12,7 @@ npm run preview
 
 `npm run preview` 用 HTTPS 静态服务器在 `0.0.0.0:5173` 提供 **dist 中的文件**，没有 HMR、API、WebSocket 代理或本地广播。现有开发证书放在 `.certs/`，不提交、不进入 dist；首次本地开发可运行 `npm run dev` 生成证书。手机使用 `https://192.168.2.112:5173/`，按浏览器提示信任开发证书。IP 不同需调整本地证书 SAN。每次修改源码后重新构建再刷新。
 
-Cloudflare Pages 上传 `dist` 即可，或设置构建命令 `npm run build`、输出目录 `dist`。不需要 Pages Functions、Worker、数据库、后端环境变量或常驻个人电脑。静态预览脚本仅用于本地服务文件，部署时不上传/运行。
+Cloudflare Pages 上传 `dist` 即可，或设置构建命令 `npm run build`、输出目录 `dist`。不需要 Pages Functions；生产构建通过 `VITE_STORAGE_URL` 指向独立的 Storage Manager。静态预览脚本仅用于本地服务文件，部署时不上传/运行。
 
 ## 浏览器接入 Waku
 
@@ -132,11 +132,19 @@ Sources: https://developers.cloudflare.com/realtime/turn/generate-credentials/ a
 
 2026-09-11 验证：47 项单元测试通过；真实 Waku 双浏览器消息、心跳、离线恢复通过；仅美国单一 WSS 网关可达时双向消息通过；Cloudflare TURN 强制 relay 的三人连接、音视频 RTP、文字、断线重建与信令中断测试通过。实体手机 5G/VPN 网络仍需用户验收。
 
+## 加密文件与房间内浏览
+
+房间消息只携带经过签名和房间加密的附件索引，文件内容不塞进 Waku 消息。浏览器先用房间密钥对原文件做 XChaCha20-Poly1305 加密，再把密文按 4 MiB 分片上传到 `VITE_STORAGE_URL`。服务端只看到 room ID、随机密文、大小和 SHA-256 内容地址；文件名、MIME 类型和对象索引都在 Waku 房间密文内。当前单个原文件上限 190 MiB，存储端每房间的消息和文件合计保留 7 天、上限 200 MiB。
+
+图片、视频、音频、PDF 和 Markdown 可以在房间消息中打开；其他文件只提供下载。每张附件卡都有明显的“下载原文件”按钮。原文件始终完整保留；图片可生成均衡或节省流量的 WebP 预览。浏览器支持 `MediaRecorder` 和 `captureStream()` 时，五分钟以内的音视频可按均衡（视频约 1.5 Mbps、音频 96 kbps）或节省流量（视频约 600 kbps、音频 64 kbps）生成预览；不支持、时长超限或预览反而更大时自动使用原文件。预览和原文件都单独加密。
+
+当前公网入口是 `https://storage.wakukusmartrecipe.uk`，由 Cloudflare Tunnel 代理到 Mac mini 的 `127.0.0.1:8788`，源站不直接暴露公网端口。Storage Manager 源码在 [`services/storage-manager`](services/storage-manager)，部署密钥只保存在 Mac mini 的 `.env`，不进入静态包或仓库。
+
 ## 聊天历史
 
 房间文字通过非 ephemeral 编码器发送，Store 保存的是已有房间加密密文。心跳与频道信令保持 ephemeral。之前版本发送的文字没有要求节点保存，可能无法恢复。公共 Store 的留存策略和可用性不受本应用控制，不保证完整性。
 
-进入房间并接通实时订阅后异步查询 Store，最多尝试三个已连接 Store 节点，每个最多十页、每页 50 条，总查询约 45 秒超时；按签名时间保留最近七天，合并去重后最多 1000 条。查询失败可单独重试。返回顺序不影响显示顺序，旧名称不会覆盖更新的名称，旧记录不产生在线心跳或频道动作。历史解密独立验证签名、房间、消息类型和消息日期对应的每日 PoW，实时接收仍保留五分钟及当前 epoch 限制。
+进入房间并接通实时订阅后，会并行查询公共 Store 和 Storage Manager，合并去重后最多显示 1000 条。公共 Store 最多尝试三个已连接节点，每个最多十页、每页 50 条，总查询约 45 秒超时；Storage Manager 最多读取十页、每页 100 条。两边任意一方成功即可恢复其可用记录。按签名时间只接受最近七天；返回顺序不影响显示顺序，旧名称不会覆盖更新的名称，旧记录不产生在线心跳或频道动作。历史解密独立验证签名、房间、消息类型、附件索引和消息日期对应的每日 PoW，实时接收仍保留五分钟及当前 epoch 限制。
 
 加载提示覆盖在聊天区上方，不改变聊天区高度；插入消息时按可见消息 ID 与像素偏移恢复滚动位置。在底部时跟随消息，阅读上方时不会自动拉到底部。
 
