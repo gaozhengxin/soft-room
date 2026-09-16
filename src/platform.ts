@@ -1,4 +1,5 @@
 import {Capacitor,CapacitorHttp} from '@capacitor/core';
+import {Clipboard} from '@capacitor/clipboard';
 export const nativeApp=()=>Capacitor.isNativePlatform();
 export async function readLocation(native:boolean,configured:string|undefined){
  const url=locationEndpoint(native,configured);
@@ -16,4 +17,8 @@ export function locationEndpoint(native:boolean,configured:string|undefined){if(
 export function invitationLink(code:string,native:boolean,configured:string|undefined,current:string){
  if(native){const site=publicSite(configured);return site?`${site}/#${code}`:code;}
  const url=new URL(current);url.search='';url.hash=code;return url.href;
+}
+export async function copyText(value:string,native=nativeApp()){
+ if(native){await Clipboard.write({string:value});return;}
+ await navigator.clipboard.writeText(value);
 }

@@ -2,7 +2,7 @@ import type {Network} from './mesh-wire.ts';
 import {preserveScroll} from './scroll.ts';
 import {createIceProvider} from './ice.ts';
 import {keepMobileScreenOn} from './awake.ts';
-import {nativeApp,invitationLink} from './platform.ts';
+import {nativeApp,invitationLink,copyText} from './platform.ts';
 import {RoomMesh} from './mesh.ts';
 import {mountMeshPanel} from './mesh-ui.ts';
 import networkIcon from './icons/network.svg?raw';
@@ -43,7 +43,7 @@ const seenIds=new Map<string,Set<string>>();
 let active:SavedRoom|undefined,connection:Awaited<ReturnType<typeof connect>>|undefined;
 let mesh:RoomMesh|undefined;
 let generation=0,busy=false,sending=false,fileSending=false,controller:AbortController|undefined;
-let statusKey:TextKey='idle',noticeKey:TextKey|undefined,copyValue:string|undefined;
+let statusKey:TextKey='idle',noticeKey:TextKey|undefined,copyValue:string|undefined,sharingRoom:Room|undefined;
 let writeController:AbortController|undefined,writeBusy=false,writePaused=false;
 let progress:WorkProgress={attempts:0,elapsed:0};
 const save=()=>{cacheFailed=!saveSession(storage,session);renderCache();};
@@ -123,7 +123,7 @@ const meshButton=document.createElement('button');meshButton.id='room-network';m
 $('room-me').innerHTML=userIcon;$('room-members').innerHTML=peopleIcon;$('room-menu').innerHTML=settingsIcon;
 document.querySelector('.history-note')!.remove();
 shell.insertAdjacentHTML('beforeend','<button id="sidebar-backdrop" class="sidebar-backdrop" tabindex="-1" data-label="close" hidden></button><div id="cache-alert" role="alert" hidden></div>');
-function toggleSidebar(open:boolean){shell.classList.toggle('sidebar-open',open);shell.classList.toggle('sidebar-collapsed',!open);$('sidebar-toggle').setAttribute('aria-expanded',String(open));$('sidebar-backdrop').hidden=!open||!matchMedia('(max-width:760px)').matches;sidebar.inert=!open;}
+function toggleSidebar(open:boolean){shell.classList.toggle('sidebar-open',open);shell.classList.toggle('sidebar-collapsed',!open);$('sidebar-toggle').setAttribute('aria-expanded',String(open));$('sidebar-backdrop').hidden=!open||!matchMedia('(max-width:760px)').matches;sidebar.toggleAttribute('aria-hidden',!open);sidebar.style.pointerEvents=open?'':'none';}
 $('sidebar-toggle').onclick=()=>toggleSidebar(!shell.classList.contains('sidebar-open'));
 $('sidebar-backdrop').onclick=()=>toggleSidebar(false);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&matchMedia('(max-width:760px)').matches)toggleSidebar(false);});
@@ -137,7 +137,7 @@ $('room-menu').onclick=()=>{if(active){$('room-info-name').textContent=active.ro
 $('remove-active').onclick=()=>{if(active)void removeRoom(active);};
 $('reset-nickname').onclick=()=>{$<HTMLInputElement>('nickname').value='';$<HTMLFormElement>('nickname-form').requestSubmit();};
 $('global-name-form').onsubmit=event=>{event.preventDefault();try{const name=normalizeNickname($<HTMLInputElement>('global-name').value);if(name)session.name=name;else delete session.name;save();savedFeedback('global-name-form','identity-dialog','nameSaved');}catch{$('identity-feedback').textContent=t('nicknameInvalid');}};
-$('share-copy').onclick=async()=>{const button=$<HTMLButtonElement>('share-copy');button.classList.add('copy-pressed');setTimeout(()=>button.classList.remove('copy-pressed'),260);const input=$<HTMLTextAreaElement>('share-link');try{await navigator.clipboard.writeText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
+$('share-copy').onclick=async()=>{const button=$<HTMLButtonElement>('share-copy');button.classList.add('copy-pressed');setTimeout(()=>button.classList.remove('copy-pressed'),260);const input=$<HTMLTextAreaElement>('share-link');if(sharingRoom)input.value=invitationLink(invite(sharingRoom),nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);try{await copyText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
 const meshPanel=mountMeshPanel({host:shell,button:meshButton,t,isSelf:key=>key===session.identity.publicKey,selfName:()=>effectiveName(session.name,active?.nickname)||'',getMesh:()=>mesh,canJoin:()=>!!active&&!!connection?.connected()&&canWrite(active),name:key=>{const m=active?membersByRoom.get(roomId(active.room))?.get(key):undefined;return key===session.identity.publicKey?effectiveName(session.name,active?.nickname)||t('you'):m?.name||t('visitor',{id:key.slice(0,8)});}});
 let membersView='';
 const savedToast=document.createElement('div');savedToast.className='saved-toast';savedToast.setAttribute('role','status');savedToast.setAttribute('aria-live','polite');savedToast.hidden=true;document.body.append(savedToast);
@@ -336,7 +336,7 @@ function addMessage(saved:SavedRoom,m:Message){
  if(active&&id===roomId(active.room)){if(m.kind!=='heartbeat'||entry.nameChange)renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();}
 }
 async function copyInvitation(room:Room){
- $('share-name').textContent=room.name;$<HTMLTextAreaElement>('share-link').value=invitationLink(invite(room),nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);$('share-feedback').textContent='';showPanel('share-dialog');
+ sharingRoom=room;$('share-name').textContent=room.name;$<HTMLTextAreaElement>('share-link').value=invitationLink(invite(room),nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);$('share-feedback').textContent='';showPanel('share-dialog');
 }
 async function removeRoom(saved:SavedRoom){
  if(!confirm(t('removeConfirm',{name:saved.room.name})))return;closePanels();

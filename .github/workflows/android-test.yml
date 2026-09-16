@@ -1,0 +1,57 @@
+name: Release Android test build
+on:
+  workflow_dispatch:
+
+jobs:
+  android-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run android:sync
+      - name: Restore Android signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_B64" && test -n "$STORE_PASSWORD"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/soft-room-release.p12"
+          chmod 600 "$RUNNER_TEMP/soft-room-release.p12"
+      - name: Build signed test APK
+        env:
+          SOFT_ROOM_ANDROID_KEYSTORE: ${{ runner.temp }}/soft-room-release.p12
+          SOFT_ROOM_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        run: bash android/gradlew -p android assembleRelease --no-daemon
+      - name: Verify and package test APK
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+          mkdir -p artifacts
+          cp "$apk" artifacts/Soft-Room-android-test.apk
+          (cd artifacts && sha256sum Soft-Room-android-test.apk > Soft-Room-android-test.apk.sha256)
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          tag="v${version}-android-test.${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" \
+            artifacts/Soft-Room-android-test.apk \
+            artifacts/Soft-Room-android-test.apk.sha256 \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" \
+            --notes "Android test build. Fixes native viewport and system-bar insets, sidebar touch handling, room-specific invitation copying, and compatibility with Android System WebView versions missing newer APIs used by Waku/libp2p. This prerelease does not replace the stable update channel."
