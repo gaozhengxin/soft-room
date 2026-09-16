@@ -32,7 +32,8 @@ body{margin:0;overflow:hidden}.shell{max-width:none!important;width:100%;height:
 .layout>.chat{height:calc(100% - 36px)!important;margin:18px 18px 18px 0}
 .sidebar-collapsed .layout>.chat{margin-left:18px}
 @media(max-width:760px){
-  #room-sidebar{position:fixed;inset:0 auto 0 0;height:100dvh;border-radius:0;overflow:hidden}
+  #room-sidebar{position:fixed;inset:0 auto 0 0;height:100dvh;border-radius:0;overflow:hidden;z-index:101}
+  .sidebar-backdrop{inset:0 0 0 min(280px,calc(100vw - 54px));z-index:100;padding:0;min-height:0}
   .layout>.chat,.sidebar-collapsed .layout>.chat{height:100%!important;margin:0}
 }
 

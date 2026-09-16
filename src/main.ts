@@ -122,7 +122,7 @@ $('room-tools').replaceChildren();$('room-tools').innerHTML='<button id="room-me
 const meshButton=document.createElement('button');meshButton.id='room-network';meshButton.className='icon-button';meshButton.dataset.label='meshTitle';meshButton.innerHTML=networkIcon;$('room-tools').insertBefore(meshButton,$('room-menu'));
 $('room-me').innerHTML=userIcon;$('room-members').innerHTML=peopleIcon;$('room-menu').innerHTML=settingsIcon;
 document.querySelector('.history-note')!.remove();
-shell.insertAdjacentHTML('beforeend','<button id="sidebar-backdrop" class="sidebar-backdrop" tabindex="-1" data-label="close" hidden></button><div id="cache-alert" role="alert" hidden></div>');
+shell.insertAdjacentHTML('beforeend','<div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true" hidden></div><div id="cache-alert" role="alert" hidden></div>');
 function toggleSidebar(open:boolean){shell.classList.toggle('sidebar-open',open);shell.classList.toggle('sidebar-collapsed',!open);$('sidebar-toggle').setAttribute('aria-expanded',String(open));$('sidebar-backdrop').hidden=!open||!matchMedia('(max-width:760px)').matches;sidebar.toggleAttribute('aria-hidden',!open);sidebar.style.pointerEvents=open?'':'none';}
 $('sidebar-toggle').onclick=()=>toggleSidebar(!shell.classList.contains('sidebar-open'));
 $('sidebar-backdrop').onclick=()=>toggleSidebar(false);
