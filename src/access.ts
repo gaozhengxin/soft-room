@@ -15,6 +15,14 @@ export function terminal(ua:string,touch=0){
 }
 export function blockedCountry(country:string){return ['CN','HK','MO'].includes(country.toUpperCase());}
 
+export async function accessCodeDigest(value:string){
+ const bytes=new TextEncoder().encode(value.trim());
+ const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+ return Array.from(digest,byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+
+export function validAccessDigest(value:string){return /^[a-f0-9]{64}$/.test(value);}
+
 // Cloudflare serves this at the site's own origin; never transmit room data or invitations.
 export function parseTrace(body:string):{ip:string;country:string}{
  const fields=new Map(body.trim().split(/\r?\n/).map(line=>{const i=line.indexOf('=');return [line.slice(0,i),line.slice(i+1)];}));

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {browserLanguage,localAddress,terminal,blockedCountry,parseTrace} from '../src/access.ts';
+import {browserLanguage,localAddress,terminal,blockedCountry,parseTrace,accessCodeDigest,validAccessDigest} from '../src/access.ts';
 test('language preferences choose supported locale in order',()=>{
  assert.equal(browserLanguage(['zh-Hant-HK','en']),'zh');assert.equal(browserLanguage(['en-US','zh-CN']),'en');assert.equal(browserLanguage(['fr','zh-CN']),'zh');assert.equal(browserLanguage(['ja']),'en');
 });
@@ -22,4 +22,9 @@ test('Cloudflare trace validates visitor IP and location, not the edge server lo
  assert.deepEqual(parseTrace('ip=8.8.8.8\nloc=HK\ncolo=LAX\n'),{ip:'8.8.8.8',country:'HK'});
  assert.equal(parseTrace('ip=2001:4860:4860::8888\nloc=US').country,'US');
  for(const body of ['<html>Not found</html>','ip=8.8.8.8\nloc=XX0','ip=8.8.8.8\nloc=XX','ip=999.0.0.1\nloc=US','ip=8.8.8.8\ncolo=HKG'])assert.throws(()=>parseTrace(body));
+});
+test('access code digest trims input and produces a validated SHA-256 digest',async()=>{
+ const digest=await accessCodeDigest(' 123456 ');
+ assert.equal(digest,'8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92');
+ assert.ok(validAccessDigest(digest));assert.equal(validAccessDigest(digest.toUpperCase()),false);assert.equal(validAccessDigest('123456'),false);
 });
