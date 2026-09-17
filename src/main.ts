@@ -21,7 +21,8 @@ import {effectiveName,type ChatEntry} from './names.ts';
 import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, openHistory, type Room, type Message } from './protocol.ts';
 import { computeReadKey, computeWork, type WorkProgress } from './pow.ts';
 import { loadSession, saveSession, freshSession, encodeSession, decodeSession, SESSION_KEY, type SavedRoom } from './session.ts';
-import {activeProfile,deleteSavedRoom,isPersistent,logoutPersistent,persistSessionState} from './persistent/runtime.ts';
+import {activeProfile,deleteSavedRoom,exportRecoveryFile,isPersistent,logoutPersistent,persistSessionState} from './persistent/runtime.ts';
+import {saveNativeFileDetailed} from './native-files.ts';
 import { translate, type TextKey, type Language } from './i18n.ts';
 import {observeMember,online,HEARTBEAT_INTERVAL,type Member} from './members.ts';
 import { connect } from './transport.ts';
@@ -89,7 +90,7 @@ $('choose-create').onclick=()=>{ $('create').hidden=false;$('join').hidden=true;
 $('choose-join').onclick=()=>{ $('create').hidden=true;$('join').hidden=false;$('choose-create').setAttribute('aria-pressed','false');$('choose-join').setAttribute('aria-pressed','true');};
 $('choose-create').click();
 const identityPanel=makeDialog('identity-dialog','myIdentity');
-identityPanel.innerHTML='<span class="pill" data-i18n="temporaryIdentity"></span><p id="identity-key" class="identity-key"></p><form id="global-name-form"><label for="global-name" data-i18n="globalName"></label><input id="global-name" maxlength="24" autocomplete="off"/><p class="scope-hint" data-i18n="globalNameHint"></p><button class="primary" data-i18n="saveName"></button><p id="identity-feedback" role="status"></p></form>';
+identityPanel.innerHTML='<span class="pill" data-i18n="temporaryIdentity"></span><p id="identity-key" class="identity-key"></p><form id="global-name-form"><label for="global-name" data-i18n="globalName"></label><input id="global-name" maxlength="24" autocomplete="off"/><p class="scope-hint" data-i18n="globalNameHint"></p><button class="primary" data-i18n="saveName"></button><p id="identity-feedback" role="status"></p></form><section id="recovery-file-tools" class="recovery-file-tools" hidden><p class="recovery-warning" data-i18n="recoveryFileSafety"></p><button id="download-recovery-file" type="button" data-i18n="recoveryFileDownload"></button><p id="recovery-file-feedback" role="status"></p></section>';
 identityPanel.append(document.querySelector('.session-banner')!);
 const preferences=document.createElement('details');preferences.className='preferences';preferences.innerHTML='<summary data-i18n="preferences"></summary>';
 for(const id of ['skin','language']){const label=document.createElement('label');label.htmlFor=id;label.dataset.i18n=id;preferences.append(label,$(id));}
@@ -134,13 +135,14 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&matchMedia('(max-wi
 const mobileLayout=matchMedia('(max-width:760px)');toggleSidebar(!mobileLayout.matches);mobileLayout.addEventListener('change',()=>toggleSidebar(!mobileLayout.matches));
 function openNew(){ $('form-feedback').textContent='';showPanel('new-dialog');}
 $('new-room').onclick=openNew;
-$('my-identity').onclick=()=>{$<HTMLInputElement>('global-name').value=session.name||'';$('identity-feedback').textContent='';showPanel('identity-dialog');};
+$('my-identity').onclick=()=>{$<HTMLInputElement>('global-name').value=session.name||'';$('identity-feedback').textContent='';$('recovery-file-feedback').textContent='';showPanel('identity-dialog');};
 $('room-me').onclick=()=>{if(active){$('nickname-room').textContent=t('inRoom',{name:active.room.name});$('global-name-context').textContent=t('globalContext',{name:session.name||t('visitor',{id:session.identity.publicKey.slice(0,8)})});$('nickname-feedback').textContent='';showPanel('nickname-dialog');}};
 $('room-members').onclick=()=>{renderMembers();showPanel('members-dialog');};
 $('room-menu').onclick=()=>{if(active){$('room-info-name').textContent=active.room.name;showPanel('room-dialog');}};
 $('remove-active').onclick=()=>{if(active)void removeRoom(active);};
 $('reset-nickname').onclick=()=>{$<HTMLInputElement>('nickname').value='';$<HTMLFormElement>('nickname-form').requestSubmit();};
 $('global-name-form').onsubmit=event=>{event.preventDefault();try{const name=normalizeNickname($<HTMLInputElement>('global-name').value);if(name)session.name=name;else delete session.name;save();savedFeedback('global-name-form','identity-dialog','nameSaved');}catch{$('identity-feedback').textContent=t('nicknameInvalid');}};
+$('download-recovery-file').onclick=()=>void(async()=>{const button=$<HTMLButtonElement>('download-recovery-file'),feedback=$('recovery-file-feedback');button.disabled=true;feedback.textContent='';try{const contents=await exportRecoveryFile();if(!contents){feedback.textContent=t('recoveryFileMissing');return;}const blob=new Blob([contents],{type:'application/json'}),name=`Soft-Room-Recovery-${new Date().toISOString().slice(0,10)}.softroom-recovery`,native=await saveNativeFileDetailed(blob,name);if(native==='cancelled')return;if(native==='unsupported'){const url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.rel='noopener';anchor.hidden=true;document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),60_000);}feedback.textContent=t('recoveryFileSaved');}catch{feedback.textContent=t('recoveryFileFailed');}finally{button.disabled=false;}})();
 $('share-copy').onclick=async()=>{const button=$<HTMLButtonElement>('share-copy');button.classList.add('copy-pressed');setTimeout(()=>button.classList.remove('copy-pressed'),260);const input=$<HTMLTextAreaElement>('share-link');if(sharingRoom)input.value=invitationLink(invite(sharingRoom),nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);try{await copyText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
 const meshPanel=mountMeshPanel({host:shell,button:meshButton,t,isSelf:key=>key===session.identity.publicKey,selfName:()=>effectiveName(session.name,active?.nickname)||'',getMesh:()=>mesh,canJoin:()=>!!active&&!!connection?.connected()&&canWrite(active),name:key=>{const m=active?membersByRoom.get(roomId(active.room))?.get(key):undefined;return key===session.identity.publicKey?effectiveName(session.name,active?.nickname)||t('you'):m?.name||t('visitor',{id:key.slice(0,8)});}});
 let membersView='';
@@ -184,6 +186,7 @@ function renderCache(){
  document.querySelectorAll<HTMLElement>('[data-i18n="temporaryIdentity"]').forEach(node=>node.textContent=t(persistent?'persistentIdentity':'temporaryIdentity'));
  document.querySelectorAll<HTMLElement>('[data-i18n="temporaryShort"]').forEach(node=>node.textContent=t(persistent?'persistentShort':'temporaryShort'));
  const detail=document.querySelector<HTMLElement>('[data-i18n="sessionDetail"]');if(detail)detail.textContent=t(persistent?'persistentDetail':'sessionDetail');
+ $('recovery-file-tools').hidden=!persistent;
  document.querySelector('.session-banner')?.classList.toggle('cache-error',cacheFailed);
  $('identity').textContent=session.name||t('visitor',{id:session.identity.publicKey.slice(0,8)});
  $('identity-key').textContent=session.identity.publicKey;

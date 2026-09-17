@@ -17,7 +17,7 @@ try{
  await page.getByRole('button',{name:'Create persistent identity'}).click();
  const register=page.getByRole('link',{name:'Register with Bluesky'});await register.waitFor();assert.equal(await register.getAttribute('href'),'https://bsky.app/');assert.equal(await register.getAttribute('target'),'_blank');assert.match(await register.getAttribute('rel'),/noopener/);
  await page.getByRole('button',{name:'I have a Bluesky account'}).click();await page.getByLabel('App Password').waitFor();await page.getByRole('button',{name:/Back/}).click();await page.getByRole('button',{name:/Back/}).click();
- await page.getByRole('button',{name:'Sign in to persistent identity',exact:true}).click();await page.getByLabel('App Password').waitFor();await page.getByRole('button',{name:/Back/}).click();
+ await page.getByRole('button',{name:'Sign in to persistent identity',exact:true}).click();await page.getByLabel('App Password').waitFor();await page.getByLabel(/Recovery file/).waitFor();await page.getByRole('button',{name:/Back/}).click();
  await continueTemporary(page);
  const stored=JSON.parse(await page.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.notEqual(stored.secret,'11'.repeat(32));assert.equal(await page.evaluate(()=>sessionStorage.getItem('soft-room/persistent-active/v1')),null);assert.deepEqual(errors,[]);
  console.log('PASS startup choices and temporary identity isolation');

@@ -1,4 +1,5 @@
 import type {EncryptedRecord,RecordStore,StoredRecord} from './portable-state.ts';
+import type {RecoveryRecord} from './recovery.ts';
 
 const DB='soft-room-private-v1',VERSION=1,KEYS='keys',RECORDS='records';
 const request=<T>(value:IDBRequest<T>)=>new Promise<T>((resolve,reject)=>{value.onsuccess=()=>resolve(value.result);value.onerror=()=>reject(value.error||Error('IndexedDB request failed'));});
@@ -8,6 +9,9 @@ export class IndexedDbMasterKeys {
  constructor(private db:IDBDatabase){}
  async get(profileId:string){return request(this.db.transaction(KEYS).objectStore(KEYS).get(profileId)) as Promise<CryptoKey|undefined>;}
  async put(profileId:string,key:CryptoKey){const tx=this.db.transaction(KEYS,'readwrite');tx.objectStore(KEYS).put(key,profileId);await done(tx);}
+ async getRecoveryCode(profileId:string){return request(this.db.transaction(KEYS).objectStore(KEYS).get(`recovery-code:${profileId}`)) as Promise<string|undefined>;}
+ async getRecoveryRecord(profileId:string){return request(this.db.transaction(KEYS).objectStore(KEYS).get(`recovery-record:${profileId}`)) as Promise<RecoveryRecord|undefined>;}
+ async putRecovery(profileId:string,code:string,record:RecoveryRecord){const tx=this.db.transaction(KEYS,'readwrite'),store=tx.objectStore(KEYS);store.put(code,`recovery-code:${profileId}`);store.put(record,`recovery-record:${profileId}`);await done(tx);}
 }
 export class IndexedDbRecordStore implements RecordStore {
  constructor(private db:IDBDatabase,private profileId:string){}
@@ -16,4 +20,5 @@ export class IndexedDbRecordStore implements RecordStore {
  async list(collection:string){const all=await request(this.db.transaction(RECORDS).objectStore(RECORDS).getAll()) as StoredRecord[];return all.filter(item=>item.collection===collection&&(item as StoredRecord&{profileId?:string}).profileId===this.profileId).map(({collection,rkey,value})=>({collection,rkey,value}));}
  async put(record:StoredRecord){const tx=this.db.transaction(RECORDS,'readwrite');tx.objectStore(RECORDS).put({...record,profileId:this.profileId},this.key(record.collection,record.rkey));await done(tx);}
  async delete(collection:string,rkey:string){const tx=this.db.transaction(RECORDS,'readwrite');tx.objectStore(RECORDS).delete(this.key(collection,rkey));await done(tx);}
+ async replace(records:StoredRecord[]){const tx=this.db.transaction(RECORDS,'readwrite'),store=tx.objectStore(RECORDS),keys=store.getAllKeys();keys.onsuccess=()=>{for(const key of keys.result)if(typeof key==='string'&&key.startsWith(`${this.profileId}:`))store.delete(key);for(const record of records)store.put({...record,profileId:this.profileId},this.key(record.collection,record.rkey));};await done(tx);}
 }

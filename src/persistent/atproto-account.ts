@@ -1,5 +1,6 @@
 import type {Agent,CredentialSession,AtpSessionData} from '@atproto/api';
 import type {EncryptedRecord,RecordStore,StoredRecord} from './portable-state.ts';
+import {RECOVERY_COLLECTION,RECOVERY_RKEY,type RecoveryRecord} from './recovery.ts';
 
 export const DEFAULT_PDS='https://bsky.social';
 export type AccountLogin={identifier:string;appPassword:string;pds?:string};
@@ -12,11 +13,16 @@ export class AtProtoRecordStore implements RecordStore {
  async put(record:StoredRecord){await this.agent.com.atproto.repo.putRecord({repo:this.repo,collection:record.collection,rkey:record.rkey,record:record.value,validate:false});}
  async delete(collection:string,rkey:string){try{await this.agent.com.atproto.repo.deleteRecord({repo:this.repo,collection,rkey});}catch(error){if((error as {status?:number}).status!==400)throw error;}}
 }
-export type SignedInAccount={did:string;handle:string;pds:string;session:CredentialSession;records:AtProtoRecordStore};
+export class AtProtoRecoveryStore {
+ constructor(private agent:Agent,private repo:string){}
+ async get(){try{return (await this.agent.com.atproto.repo.getRecord({repo:this.repo,collection:RECOVERY_COLLECTION,rkey:RECOVERY_RKEY})).data.value as RecoveryRecord;}catch(error){if((error as {status?:number}).status===400)return;throw error;}}
+ async put(record:RecoveryRecord){await this.agent.com.atproto.repo.putRecord({repo:this.repo,collection:RECOVERY_COLLECTION,rkey:RECOVERY_RKEY,record,validate:false});}
+}
+export type SignedInAccount={did:string;handle:string;pds:string;session:CredentialSession;records:AtProtoRecordStore;recovery:AtProtoRecoveryStore};
 export async function signInAccount(input:AccountLogin,persist?:(session:AtpSessionData|undefined)=>void):Promise<SignedInAccount>{
  const {Agent,CredentialSession}=await import('@atproto/api');
  const pds=normalizePds(input.pds),session=new CredentialSession(new URL(pds),fetch,(_event,value)=>persist?.(value));
  await session.login({identifier:input.identifier.trim(),password:input.appPassword});
  if(!session.session)throw Error('Sign in failed');const agent=new Agent(session),{did,handle}=session.session;
- return {did,handle,pds,session,records:new AtProtoRecordStore(agent,did)};
+ return {did,handle,pds,session,records:new AtProtoRecordStore(agent,did),recovery:new AtProtoRecoveryStore(agent,did)};
 }

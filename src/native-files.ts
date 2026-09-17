@@ -14,15 +14,16 @@ function base64(bytes:Uint8Array){
  return btoa(binary);
 }
 
-export async function saveNativeFile(blob:Blob,name:string){
- if(Capacitor.getPlatform()!=='android')return false;
+export async function saveNativeFileDetailed(blob:Blob,name:string):Promise<'unsupported'|'cancelled'|'saved'>{
+ if(Capacitor.getPlatform()!=='android')return 'unsupported';
  const selected=await NativeFiles.beginSave({name,mime:blob.type||'application/octet-stream'});
- if(selected.cancelled)return true;
+ if(selected.cancelled)return 'cancelled';
  if(!selected.token)throw Error('No output file selected');
- if(!blob.size){await NativeFiles.writeSaveChunk({token:selected.token,data:'',final:true});return true;}
+ if(!blob.size){await NativeFiles.writeSaveChunk({token:selected.token,data:'',final:true});return 'saved';}
  for(let offset=0;offset<blob.size;offset+=CHUNK_BYTES){
   const end=Math.min(blob.size,offset+CHUNK_BYTES),data=base64(new Uint8Array(await blob.slice(offset,end).arrayBuffer()));
   await NativeFiles.writeSaveChunk({token:selected.token,data,final:end===blob.size});
  }
- return true;
+ return 'saved';
 }
+export async function saveNativeFile(blob:Blob,name:string){return (await saveNativeFileDetailed(blob,name))!=='unsupported';}
