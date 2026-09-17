@@ -53,7 +53,7 @@ jobs:
           notes="Android test channel ${version}-test.${GITHUB_RUN_NUMBER}, commit ${GITHUB_SHA}. Test builds update only to later test builds and install alongside the stable app."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" artifacts/Soft-Room-android-test.apk artifacts/Soft-Room-android-test.apk.sha256 --clobber
-            gh release edit "$tag" --prerelease --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" --notes "$notes"
+            gh release edit "$tag" --target "$GITHUB_SHA" --prerelease --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" --notes "$notes"
           else
             gh release create "$tag" artifacts/Soft-Room-android-test.apk artifacts/Soft-Room-android-test.apk.sha256 --target "$GITHUB_SHA" --prerelease --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" --notes "$notes"
           fi
