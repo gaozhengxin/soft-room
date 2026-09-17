@@ -1,6 +1,7 @@
 import {chromium} from 'playwright-core';
 import {build} from 'vite';
 import assert from 'node:assert/strict';
+import {continueTemporary} from './browser-identity.mjs';
 const result=await build({configFile:false,logLevel:'error',build:{write:false,lib:{entry:'tests/history-harness.ts',formats:['es']}}});
 const code=(Array.isArray(result)?result[0]:result).output.find(x=>x.type==='chunk').code;
 const browser=await chromium.launch({channel:'chrome',headless:true});
@@ -25,7 +26,7 @@ try{
  assert.ok(recovered,'Fresh connection must retrieve previously sent encrypted text');console.log('REAL_STORE_RECOVERY_PASS');
  const archivedKey=await page.evaluate(()=>window.packet.message.sender);
  const invitation=await page.evaluate(()=>window.lib.invite(window.room));
- await page.goto('https://127.0.0.1:5173/#'+invitation);await page.locator('#join-button').click();
+ await page.goto('https://127.0.0.1:5173/#'+invitation);await continueTemporary(page);await page.locator('#join-button').click();
  await page.waitForFunction(()=>!document.querySelector('#send')?.disabled,null,{timeout:90000});
  await page.waitForFunction(()=>document.querySelector('#messages')?.textContent.includes('recover me'),null,{timeout:60000});
  await page.locator('#message').fill('typing while history loads');

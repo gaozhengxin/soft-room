@@ -66,6 +66,6 @@ async function start(){
   const result=parseTrace(await readLocation(native,import.meta.env.VITE_PUBLIC_ORIGIN));
   if(blockedCountry(result.country)&&!regionBypassed()){blockedRegion();return;}
  }catch{const panel=screen(text.failed,text.failedDetail);button(panel,text.retry,()=>void start());return;}
- try{app.replaceChildren();await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
+ try{app.replaceChildren();const {identityStartup}=await import('./persistent/startup.ts');await identityStartup(app,language);await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
 }
 void start();

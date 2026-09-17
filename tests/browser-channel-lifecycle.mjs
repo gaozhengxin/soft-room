@@ -1,5 +1,6 @@
 import {chromium} from 'playwright-core';
 import assert from 'node:assert/strict';
+import {continueTemporary} from './browser-identity.mjs';
 const origin=process.env.STATIC_ORIGIN||'https://127.0.0.1:5173';
 const browser=await chromium.launch({channel:'chrome',headless:true,proxy:process.env.BROWSER_PROXY?{server:process.env.BROWSER_PROXY}:undefined,args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--disable-background-timer-throttling','--disable-renderer-backgrounding']});
 try{
@@ -10,9 +11,9 @@ try{
  }
  const [a,b]=pages,ready=p=>p.waitForFunction(()=>!document.querySelector('#send')?.disabled,null,{timeout:90000});
  const connected=p=>p.waitForFunction(()=>window.pcs.some(pc=>pc.connectionState==='connected'),null,{timeout:90000});
- await a.goto(origin);await a.locator('#new-room').click();await a.locator('#room-name').fill('Lifecycle '+Date.now());await a.locator('.toggle').click();await a.locator('#create-button').click();await ready(a);
+ await a.goto(origin);await continueTemporary(a);await a.locator('#new-room').click();await a.locator('#room-name').fill('Lifecycle '+Date.now());await a.locator('.toggle').click();await a.locator('#create-button').click();await ready(a);
  await a.locator('#room-menu').click();await a.locator('#copy').click();const invitation=await a.locator('#share-link').inputValue();await a.locator('#share-dialog .sheet-head button').click();
- await b.goto(invitation);await b.locator('#join-button').click();await ready(b);
+ await b.goto(invitation);await continueTemporary(b);await b.locator('#join-button').click();await ready(b);
  async function create(p,name){await p.locator('#room-network').click();await p.locator('#channel-new').click();await p.locator('#channel-name').fill(name);await p.locator('#channel-create button').click();}
  async function enter(p,name){await p.locator('#room-network').click();await p.locator('.channel-card').filter({hasText:name}).click();}
  await create(a,'First');await enter(b,'First');await Promise.all([connected(a),connected(b)]);

@@ -20,7 +20,8 @@ import './kabutack.css';
 import {effectiveName,type ChatEntry} from './names.ts';
 import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, openHistory, type Room, type Message } from './protocol.ts';
 import { computeReadKey, computeWork, type WorkProgress } from './pow.ts';
-import { loadSession, saveSession, freshSession, SESSION_KEY, type SavedRoom } from './session.ts';
+import { loadSession, saveSession, freshSession, encodeSession, decodeSession, SESSION_KEY, type SavedRoom } from './session.ts';
+import {activeProfile,deleteSavedRoom,isPersistent,logoutPersistent,persistSessionState} from './persistent/runtime.ts';
 import { translate, type TextKey, type Language } from './i18n.ts';
 import {observeMember,online,HEARTBEAT_INTERVAL,type Member} from './members.ts';
 import { connect } from './transport.ts';
@@ -47,7 +48,8 @@ let generation=0,busy=false,sending=false,fileSending=false,controller:AbortCont
 let statusKey:TextKey='idle',noticeKey:TextKey|undefined,copyValue:string|undefined,sharingRoom:Room|undefined;
 let writeController:AbortController|undefined,writeBusy=false,writePaused=false;
 let progress:WorkProgress={attempts:0,elapsed:0};
-const save=()=>{cacheFailed=!saveSession(storage,session);renderCache();};
+let persistentTimer=0,persistentFlight=Promise.resolve();
+const save=()=>{cacheFailed=!saveSession(storage,session);renderCache();if(isPersistent()){window.clearTimeout(persistentTimer);persistentTimer=window.setTimeout(()=>{const snapshot=decodeSession(encodeSession(session));persistentFlight=persistentFlight.then(()=>persistSessionState(snapshot)).catch(()=>{});},250);}};
 $('app').innerHTML=`<div class="shell">
 <header class="top"><a class="brand" href="/" data-label="home"><span class="mark"><span class="soft-monogram">s<span>r</span></span><img class="sssp-emblem" src="/sssp-emblem.svg" alt=""/></span><span>soft room<small data-i18n="tagline"></small></span></a><div class="top-tools"><div class="identity"><span class="avatar">✳</span><span><small data-i18n="temporaryIdentity"></small><b id="identity"></b></span></div><label class="sr-only" for="skin" data-i18n="skin"></label><select id="skin"><option value="soft" data-i18n="skinSoft"></option><option value="sssp" data-i18n="skinSssp"></option><option value="kabutack" data-i18n="skinKabutack"></option></select><label class="sr-only" for="language" data-i18n="language"></label><select id="language"><option value="zh">中文</option><option value="en">English</option></select></div></header>
 <section class="session-banner"><div><strong id="cache-warning"></strong><p data-i18n="sessionDetail"></p></div><button id="clear-session" data-i18n="clearSession"></button></section>
@@ -176,7 +178,11 @@ async function sendHeartbeat(){
  heartbeatFlight=flight;await flight;if(heartbeatFlight===flight)heartbeatFlight=undefined;
 }
 function renderCache(){
- $('cache-warning').textContent=t(cacheFailed?'cacheFailed':'sessionWarning');
+ const persistent=isPersistent(),profile=activeProfile();
+ $('cache-warning').textContent=t(cacheFailed?'cacheFailed':persistent?'persistentSession':'sessionWarning',{name:profile?.label||''});
+ document.querySelectorAll<HTMLElement>('[data-i18n="temporaryIdentity"]').forEach(node=>node.textContent=t(persistent?'persistentIdentity':'temporaryIdentity'));
+ document.querySelectorAll<HTMLElement>('[data-i18n="temporaryShort"]').forEach(node=>node.textContent=t(persistent?'persistentShort':'temporaryShort'));
+ const detail=document.querySelector<HTMLElement>('[data-i18n="sessionDetail"]');if(detail)detail.textContent=t(persistent?'persistentDetail':'sessionDetail');
  document.querySelector('.session-banner')?.classList.toggle('cache-error',cacheFailed);
  $('identity').textContent=session.name||t('visitor',{id:session.identity.publicKey.slice(0,8)});
  $('identity-key').textContent=session.identity.publicKey;
@@ -342,7 +348,7 @@ async function copyInvitation(room:Room){
 async function removeRoom(saved:SavedRoom){
  if(!confirm(t('removeConfirm',{name:saved.room.name})))return;closePanels();
  const id=roomId(saved.room);if(active&&roomId(active.room)===id)await disconnect();
- session.rooms=session.rooms.filter(item=>roomId(item.room)!==id);histories.delete(id);seenIds.delete(id);membersByRoom.delete(id);channelMemory.delete(id);save();renderRooms();notice('removed');
+ session.rooms=session.rooms.filter(item=>roomId(item.room)!==id);histories.delete(id);seenIds.delete(id);membersByRoom.delete(id);channelMemory.delete(id);save();void deleteSavedRoom(id).catch(()=>{});renderRooms();notice('removed');
 }
 $('nickname-form').addEventListener('submit',event=>{event.preventDefault();if(!active)return;try{const nickname=normalizeNickname($<HTMLInputElement>('nickname').value);if(nickname)active.nickname=nickname;else delete active.nickname;$<HTMLInputElement>('nickname').value=nickname;save();savedFeedback('nickname-form','nickname-dialog','nicknameSaved');}catch{notice('nicknameInvalid');}});
 $('create').addEventListener('submit',event=>{event.preventDefault();if(busy)return;const room=makeRoom($<HTMLInputElement>('room-name').value.trim()||t('defaultRoom'),$<HTMLInputElement>('pow').checked);const saved=remember(room,true);if(saved)void enter(saved);});
@@ -354,6 +360,7 @@ $('reconnect').addEventListener('click',()=>{if(active)void enter(active);});
 $('copy').addEventListener('click',()=>{if(active)void copyInvitation(active.room);});
 $('clear-session').addEventListener('click',async()=>{
  if(!confirm(t('clearConfirm')))return;closePanels();await disconnect();
+ logoutPersistent();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Save below reports storage failure. */ }
  const theme=session.theme;session=freshSession(session.language);session.theme=theme;histories.clear();seenIds.clear();membersByRoom.clear();channelMemory.clear();save();languageChanged();notice('sessionCleared');
 });

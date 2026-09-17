@@ -1,0 +1,15 @@
+.identity-startup{min-height:100%;min-height:var(--app-height,100dvh);display:grid;place-items:center;padding:max(24px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));background:var(--bg,#e7ebe7);color:var(--ink,#34433a)}
+.identity-startup-card{width:min(440px,100%);padding:32px;border-radius:30px;background:var(--panel,#e7ebe7);box-shadow:14px 14px 32px rgba(64,78,68,.18),-14px -14px 32px rgba(255,255,255,.72)}
+.identity-startup-mark{width:68px;height:68px;display:grid;place-items:center;margin:0 auto 22px;border-radius:22px;font:700 34px/1 Georgia,serif;color:#496c55;background:#dfe8df;box-shadow:inset 3px 3px 7px rgba(80,98,84,.16),inset -3px -3px 7px rgba(255,255,255,.8)}
+.identity-startup h1{text-align:center;margin:0 0 10px;font-size:clamp(1.55rem,5vw,2rem)}
+.identity-startup p{line-height:1.55;color:var(--muted,#66736a)}
+.identity-startup-actions,.identity-startup-form{display:grid;gap:12px;margin-top:24px}
+.identity-startup button,.identity-startup input{min-height:48px;border:0;border-radius:16px;font:inherit}
+.identity-startup button{padding:0 18px;cursor:pointer;color:inherit;background:var(--panel,#e7ebe7);box-shadow:5px 5px 11px rgba(63,80,68,.17),-5px -5px 11px rgba(255,255,255,.76)}
+.identity-startup button.primary{color:#f8fff9;background:#5d8067}
+.identity-startup button:disabled{opacity:.55;cursor:wait}
+.identity-startup input{box-sizing:border-box;width:100%;padding:0 16px;color:inherit;background:rgba(255,255,255,.35);box-shadow:inset 3px 3px 8px rgba(69,86,73,.14),inset -3px -3px 8px rgba(255,255,255,.72)}
+.identity-startup small{line-height:1.45;color:var(--muted,#66736a)}
+.identity-startup details{padding:12px 2px}.identity-startup summary{cursor:pointer;margin-bottom:12px}.identity-startup label{display:grid;gap:8px;color:var(--muted,#66736a)}
+.identity-startup-back{min-height:38px!important;box-shadow:none!important;background:transparent!important;padding:0!important}.identity-startup [data-status]{margin-top:18px}.identity-startup [data-status].error{color:#9c3f3f}
+@media(max-width:560px){.identity-startup{place-items:stretch;padding:0}.identity-startup-card{box-sizing:border-box;width:100%;min-height:var(--app-height,100dvh);border-radius:0;padding:calc(34px + env(safe-area-inset-top)) 22px calc(28px + env(safe-area-inset-bottom));box-shadow:none}.identity-startup-mark{margin-top:6vh}}

@@ -1,5 +1,6 @@
 import {chromium} from 'playwright-core';
 import assert from 'node:assert/strict';
+import {continueTemporary} from './browser-identity.mjs';
 
 const origin=process.env.STATIC_ORIGIN||'https://127.0.0.1:5173';
 const browser=await chromium.launch({channel:'chrome',headless:true});
@@ -7,7 +8,7 @@ const context=await browser.newContext({ignoreHTTPSErrors:true,acceptDownloads:t
 const page=await context.newPage();
 const failures=[];page.on('pageerror',error=>failures.push(error.message));
 try{
- await page.goto(origin);
+ await page.goto(origin);await continueTemporary(page);
  await page.locator('#new-room').click();
  await page.locator('#room-name').fill('File check '+Date.now());
  await page.locator('#pow').uncheck();

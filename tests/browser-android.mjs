@@ -2,6 +2,7 @@ import {chromium,devices} from 'playwright-core';
 import {readFileSync} from 'node:fs';
 import {join,extname} from 'node:path';
 import assert from 'node:assert/strict';
+import {continueTemporary} from './browser-identity.mjs';
 
 const root=new URL('../dist/',import.meta.url).pathname;
 const browser=await chromium.launch({channel:'chrome',headless:true});
@@ -31,7 +32,7 @@ async function create(name){
  await page.locator('#room-menu').click();await page.locator('#copy').click();const link=await page.locator('#share-link').inputValue();await page.locator('#share-dialog .sheet-head button').click();return link;
 }
 try{
- await page.goto('https://soft-room.test/');
+ await page.goto('https://soft-room.test/');await continueTemporary(page);
  const shell=await page.locator('.shell').boundingBox(),viewport=await page.evaluate(()=>visualViewport?.height||innerHeight);assert.ok(shell&&Math.abs(shell.height-viewport)<2,`shell ${shell?.height}, viewport ${viewport}`);
  const first=await create('Android first'),second=await create('Android second'),decode=link=>JSON.parse(Buffer.from(link.split('#sr1.')[1],'base64url').toString());
  assert.notEqual(first,second);assert.equal(decode(first).name,'Android first');assert.equal(decode(second).name,'Android second');assert.notEqual(decode(first).key,decode(second).key);

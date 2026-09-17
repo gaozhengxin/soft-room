@@ -17,6 +17,7 @@
     "test:media": "node tests/browser-media-preview.mjs",
     "test:pdf": "node tests/browser-pdf.mjs",
     "test:android": "node tests/browser-android.mjs",
+    "test:identity": "node tests/browser-persistent-startup.mjs && node tests/browser-persistent-storage.mjs",
     "ios:sync": "npm run build && cap sync ios",
     "ios:open": "cap open ios",
     "ios:ipa": "npm run ios:sync && bash scripts/build-ios-unsigned.sh",
@@ -28,6 +29,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@atproto/api": "^0.20.44",
     "@capacitor-community/keep-awake": "^8.0.1",
     "@capacitor/android": "^8.5.1",
     "@capacitor/clipboard": "^8.0.1",

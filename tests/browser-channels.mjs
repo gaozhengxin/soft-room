@@ -1,5 +1,6 @@
 import {chromium,webkit} from 'playwright-core';
 import assert from 'node:assert/strict';
+import {continueTemporary} from './browser-identity.mjs';
 const origin=process.env.STATIC_ORIGIN||'https://127.0.0.1:5173';
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--disable-background-timer-throttling','--disable-renderer-backgrounding']});
 const safari=process.env.CHANNEL_CROSS_BROWSER?await webkit.launch({headless:true}):undefined;
@@ -9,9 +10,9 @@ for(const p of [a,b]){p.setDefaultTimeout(20000);p.setDefaultNavigationTimeout(4
 const ready=p=>p.waitForFunction(()=>!document.querySelector('#send')?.disabled,null,{timeout:90000});
 const connected=p=>p.waitForFunction(()=>window.testPCs.some(pc=>pc.connectionState==='connected'&&pc.sctp?.state==='connected'),null,{timeout:90000});
 async function run(){
- await a.goto(origin,{waitUntil:'domcontentloaded'});await a.locator('#new-room').click();await a.locator('#room-name').fill('Channel modes E2E');await a.locator('.toggle').click();await a.locator('#create-button').click();await ready(a);
+ await a.goto(origin,{waitUntil:'domcontentloaded'});await continueTemporary(a);await a.locator('#new-room').click();await a.locator('#room-name').fill('Channel modes E2E');await a.locator('.toggle').click();await a.locator('#create-button').click();await ready(a);
  await a.locator('#room-menu').click();await a.locator('#copy').click();const link=await a.locator('#share-link').inputValue();await a.locator('#share-dialog .sheet-head button').click();
- await b.goto(link,{waitUntil:'domcontentloaded'});await b.locator('#join-button').click();await ready(b);console.log('ROOMS_CONNECTED');
+ await b.goto(link,{waitUntil:'domcontentloaded'});await continueTemporary(b);await b.locator('#join-button').click();await ready(b);console.log('ROOMS_CONNECTED');
  for(const mode of ['voice','video','walkie']){
   await a.locator('#room-network').click();assert.equal(await a.locator('#mesh-dialog form').count(),0);await a.locator('#channel-new').click();await a.locator('#channel-name').fill(mode+' channel');await a.locator('.channel-mode').filter({has:a.locator(`input[value="${mode}"]`)}).click();await a.locator('#channel-create button').click();
   await a.waitForFunction(m=>document.querySelector('#channel-page').dataset.mode===m,mode);

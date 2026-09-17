@@ -55,11 +55,20 @@ Waku 公共服务节点：LightPush / Filter
 
 没有永久存档、房主特权、踢人、前向保密或密钥轮换。消息标记 ephemeral 不能强迫其他参与者删除副本。
 
+## 可选持久身份
+
+启动时始终可以继续使用原有临时身份；也可以用现有 AT Protocol 账户和 App Password 创建持久身份。默认账户服务是 `https://bsky.social`，自定义 HTTPS 服务地址只放在高级设置中。账户标识不会进入房间、Waku 消息或成员列表，房间仍只把 Ed25519/Waku 公钥视为身份。
+
+持久模式为每个账户生成随机、不可导出的 256 位 AES-GCM MasterKey，保存在本机 IndexedDB。Waku 私钥和每个房间的完整能力材料分别加密；PDS 只接收 `uk.wakukusmartrecipe.soft.identity/self` 和独立的 `uk.wakukusmartrecipe.soft.room/<random-rkey>` 密文记录。聊天历史仍由 Waku Store/Storage Manager 负责。App Password 和 AT Protocol 会话令牌不写入持久存储。具体边界、记录格式和恢复限制见 [docs/persistent-identity.md](docs/persistent-identity.md)。
+
+当前尚未设计 MasterKey 恢复码或设备传输体验，因此新设备即使登录同一账户也不能解密旧记录，会明确要求恢复密钥。OAuth、PDS 迁移、DID 自托管/轮换和原生 Keychain 加固延后；不会用账户密码派生 MasterKey。
+
 ## 验证
 
 ```sh
 npm run build
 npm test
+npm run test:identity
 # 先运行 npm run preview，需本机安装 Chrome，或指定 BROWSER_PATH
 npm run test:lan
 ```
@@ -90,7 +99,7 @@ npm run test:mesh
 
 封装时配置 `VITE_PUBLIC_ORIGIN=https://实际的Cloudflare域名` 并重新构建，作为地区查询和可分享邀请地址。缺失配置时原生地区检查失败关闭；邀请构造不会泄漏不可访问的原生容器地址，可退回原始邀请码。iOS 和 Android 工程已加入仓库，原生插件随构建同步。WebKit 自动测试不等于 iPhone 真机验证，Android 网页测试也不等于 Android 原生容器验收。
 
-iOS 后台可能暂停 JavaScript 和网络；不能保证锁屏常驻 mesh。当前在页面恢复可见后检查连接并恢复信令，后续封装需要接入 App 生命周期和邀请深链接；后台语音、来电与持久身份不在本轮范围内。
+iOS 后台可能暂停 JavaScript 和网络；不能保证锁屏常驻 mesh。当前在页面恢复可见后检查连接并恢复信令，后续封装需要接入 App 生命周期和邀请深链接；后台语音和来电不在本轮范围内。持久身份已使用跨平台 IndexedDB 密钥层，原生 Keychain 加固仍待后续实现。
 
 补充引擎恢复测试：`npm run test:mesh:engine` 使用真实 WebRTC，模拟 Waku 信令丢包、重复和中断；`MESH_ENGINE=webkit npm run test:mesh:engine` 在 WebKit 上运行同一测试。`MESH_ENGINE=webkit npm run test:mesh` 则运行完整页面和真实 Waku 流程。首次使用 WebKit 需 `npx playwright-core install webkit`。CapacitorHttp 使用 core 内置原生实现，不启用全局 fetch/XHR 补丁，以免改变 Waku SDK 的网络行为。
 
