@@ -68,13 +68,14 @@ jobs:
         env:
           SOFT_ROOM_ANDROID_KEYSTORE: ${{ runner.temp }}/soft-room-release.p12
           SOFT_ROOM_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
-        run: bash android/gradlew -p android assembleRelease --no-daemon
+        run: bash android/gradlew -p android assembleStableRelease --no-daemon
       - name: Verify and package APK
         run: |
-          apk=android/app/build/outputs/apk/release/app-release.apk
+          apk=android/app/build/outputs/apk/stable/release/app-stable-release.apk
           apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
           test -n "$apksigner"
           "$apksigner" verify --verbose --print-certs "$apk"
+          grep -R -q 'releases/latest/download/Soft-Room-android.apk' android/app/src/main/assets/public/assets
           mkdir -p artifacts
           cp "$apk" artifacts/Soft-Room-android.apk
           (cd artifacts && sha256sum Soft-Room-android.apk > Soft-Room-android.apk.sha256)

@@ -19,7 +19,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
-      - run: npm run android:sync
+      - run: npm run android:sync:test
       - name: Restore Android signing key
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
@@ -32,26 +32,28 @@ jobs:
         env:
           SOFT_ROOM_ANDROID_KEYSTORE: ${{ runner.temp }}/soft-room-release.p12
           SOFT_ROOM_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
-        run: bash android/gradlew -p android assembleRelease --no-daemon
+          SOFT_ROOM_ANDROID_BUILD_NUMBER: ${{ github.run_number }}
+        run: bash android/gradlew -p android assembleBetaRelease --no-daemon
       - name: Verify and package test APK
         run: |
-          apk=android/app/build/outputs/apk/release/app-release.apk
+          apk=android/app/build/outputs/apk/beta/release/app-beta-release.apk
           apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
           test -n "$apksigner"
           "$apksigner" verify --verbose --print-certs "$apk"
+          grep -R -q 'releases/download/android-test/Soft-Room-android-test.apk' android/app/src/main/assets/public/assets
           mkdir -p artifacts
           cp "$apk" artifacts/Soft-Room-android-test.apk
           (cd artifacts && sha256sum Soft-Room-android-test.apk > Soft-Room-android-test.apk.sha256)
-      - name: Publish prerelease
+      - name: Publish test channel
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node -p 'require("./package.json").version')
-          tag="v${version}-android-test.${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" \
-            artifacts/Soft-Room-android-test.apk \
-            artifacts/Soft-Room-android-test.apk.sha256 \
-            --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" \
-            --notes "Android test build. Removes the mobile navigation backdrop that intercepted WebView touches, adds an explicit sidebar close control, and renders PDFs through PDF.js's main-thread compatibility path instead of a module Worker. It retains system-file-picker downloads and earlier Android fixes. This prerelease does not replace the stable update channel."
+          tag="android-test"
+          notes="Android test channel ${version}-test.${GITHUB_RUN_NUMBER}, commit ${GITHUB_SHA}. Test builds update only to later test builds and install alongside the stable app."
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" artifacts/Soft-Room-android-test.apk artifacts/Soft-Room-android-test.apk.sha256 --clobber
+            gh release edit "$tag" --prerelease --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" --notes "$notes"
+          else
+            gh release create "$tag" artifacts/Soft-Room-android-test.apk artifacts/Soft-Room-android-test.apk.sha256 --target "$GITHUB_SHA" --prerelease --title "Soft Room Android ${version} test ${GITHUB_RUN_NUMBER}" --notes "$notes"
+          fi

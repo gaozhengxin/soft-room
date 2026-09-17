@@ -7,10 +7,15 @@ if (versionParts.size() != 3 || versionParts.any { it < 0 || it > 999 }) {
 }
 def releaseKeystore = System.getenv('SOFT_ROOM_ANDROID_KEYSTORE')
 def releasePassword = System.getenv('SOFT_ROOM_ANDROID_STORE_PASSWORD')
+def betaBuildNumber = (System.getenv('SOFT_ROOM_ANDROID_BUILD_NUMBER') ?: '1') as Integer
+if (betaBuildNumber < 1 || betaBuildNumber > 9999) {
+    throw new GradleException('Android beta build number must be between 1 and 9999')
+}
 
 android {
     namespace = "uk.wakukusmartrecipe.soft"
     compileSdk = rootProject.ext.compileSdkVersion
+    flavorDimensions += "channel"
     defaultConfig {
         applicationId "uk.wakukusmartrecipe.soft"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -22,6 +27,21 @@ android {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    productFlavors {
+        stable {
+            dimension "channel"
+            resValue "string", "app_name", "Soft Room"
+            resValue "string", "title_activity_main", "Soft Room"
+        }
+        beta {
+            dimension "channel"
+            applicationIdSuffix ".beta"
+            versionCode defaultConfig.versionCode * 10000 + betaBuildNumber
+            versionName "${appVersion}-test.${betaBuildNumber}"
+            resValue "string", "app_name", "Soft Room 测试版"
+            resValue "string", "title_activity_main", "Soft Room 测试版"
         }
     }
     signingConfigs {
