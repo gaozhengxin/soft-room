@@ -1,8 +1,9 @@
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
 export async function renderPdf(blob:Blob,root:HTMLElement,onRender:()=>void){
- const {getDocument,GlobalWorkerOptions}=await import('pdfjs-dist');
- GlobalWorkerOptions.workerSrc=pdfWorker;
+ // Android WebView may allow module imports but reject module Workers from the
+ // app asset origin. Loading the legacy worker handler on this thread makes
+ // PDF.js use its built-in loopback port instead of leaving a blank canvas.
+ await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs');
+ const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');
  const pdf=await getDocument({data:new Uint8Array(await blob.arrayBuffer()),isEvalSupported:false}).promise;
  const pages:HTMLElement[]=[];
  for(let number=1;number<=pdf.numPages;number++){

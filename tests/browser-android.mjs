@@ -36,8 +36,8 @@ try{
  const first=await create('Android first'),second=await create('Android second'),decode=link=>JSON.parse(Buffer.from(link.split('#sr1.')[1],'base64url').toString());
  assert.notEqual(first,second);assert.equal(decode(first).name,'Android first');assert.equal(decode(second).name,'Android second');assert.notEqual(decode(first).key,decode(second).key);
  await openSidebar();
- const sidebarBox=await page.locator('#room-sidebar').boundingBox(),backdropBox=await page.locator('#sidebar-backdrop').boundingBox();
- assert.ok(sidebarBox&&backdropBox&&backdropBox.x>=sidebarBox.x+sidebarBox.width-1,'sidebar backdrop overlaps the navigation hit area');
+ assert.ok(await page.locator('#sidebar-backdrop').isHidden(),'mobile navigation backdrop must not intercept Android touches');
  await physicalClick('#my-identity');await page.locator('#identity-dialog').waitFor();
+ await page.locator('#identity-dialog .sheet-head button').click();await openSidebar();await physicalClick('#sidebar-close');assert.ok(await page.locator('#room-sidebar').isHidden(),'sidebar close control did not close navigation');
  assert.deepEqual(errors,[]);console.log('PASS Android viewport, sidebar touch, unique invitations and Waku connection with legacy WebView APIs');
 }finally{await browser.close();}

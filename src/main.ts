@@ -12,6 +12,7 @@ import peopleIcon from './icons/users-round.svg?raw';
 import settingsIcon from './icons/settings.svg?raw';
 import downloadIcon from './icons/download.svg?raw';
 import paperclipIcon from './icons/paperclip.svg?raw';
+import closeIcon from './icons/x.svg?raw';
 import './style.css';
 import './sssp.css';
 import './layout.css';
@@ -109,7 +110,7 @@ filePanel.innerHTML='<form id="file-form"><label for="file-input" data-i18n="fil
 const sidebar=document.querySelector<HTMLElement>('.controls')!;
 const manager=document.querySelector('.room-manager')!;
 const brand=document.querySelector('.brand')!;
-sidebar.replaceChildren(brand);
+sidebar.replaceChildren(brand);sidebar.insertAdjacentHTML('afterbegin',`<button id="sidebar-close" type="button" class="icon-button sidebar-close" data-label="close">${closeIcon}</button>`);
 sidebar.insertAdjacentHTML('beforeend','<button id="new-room" class="primary" data-i18n="newRoom"></button>');sidebar.append(manager);
 sidebar.insertAdjacentHTML('beforeend',`<div class="sidebar-bottom"><p class="identity-heading" data-i18n="myIdentity"></p><button id="my-identity" class="profile-button"><span class="profile-avatar" aria-hidden="true">${userIcon}</span><span class="profile-copy"><b id="identity"></b><small data-i18n="temporaryIdentity"></small></span><span class="profile-settings" aria-hidden="true">${settingsIcon}</span></button><p data-i18n="temporaryShort"></p></div>`);
 const releaseLink='https://github.com/gaozhengxin/soft-room/releases/latest';
@@ -123,9 +124,9 @@ const meshButton=document.createElement('button');meshButton.id='room-network';m
 $('room-me').innerHTML=userIcon;$('room-members').innerHTML=peopleIcon;$('room-menu').innerHTML=settingsIcon;
 document.querySelector('.history-note')!.remove();
 shell.insertAdjacentHTML('beforeend','<div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true" hidden></div><div id="cache-alert" role="alert" hidden></div>');
-function toggleSidebar(open:boolean){shell.classList.toggle('sidebar-open',open);shell.classList.toggle('sidebar-collapsed',!open);$('sidebar-toggle').setAttribute('aria-expanded',String(open));$('sidebar-backdrop').hidden=!open||!matchMedia('(max-width:760px)').matches;sidebar.toggleAttribute('aria-hidden',!open);sidebar.style.pointerEvents=open?'':'none';}
+function toggleSidebar(open:boolean){shell.classList.toggle('sidebar-open',open);shell.classList.toggle('sidebar-collapsed',!open);$('sidebar-toggle').setAttribute('aria-expanded',String(open));$('sidebar-backdrop').hidden=true;sidebar.toggleAttribute('aria-hidden',!open);sidebar.style.pointerEvents=open?'':'none';}
 $('sidebar-toggle').onclick=()=>toggleSidebar(!shell.classList.contains('sidebar-open'));
-$('sidebar-backdrop').onclick=()=>toggleSidebar(false);
+$('sidebar-close').onclick=()=>toggleSidebar(false);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&matchMedia('(max-width:760px)').matches)toggleSidebar(false);});
 const mobileLayout=matchMedia('(max-width:760px)');toggleSidebar(!mobileLayout.matches);mobileLayout.addEventListener('change',()=>toggleSidebar(!mobileLayout.matches));
 function openNew(){ $('form-feedback').textContent='';showPanel('new-dialog');}
