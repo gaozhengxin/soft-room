@@ -79,7 +79,7 @@ export async function loginPersistent(input:PersistentAccountLogin,language:'zh'
  await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);await activateAccount(storedKey,repository);return {session:restored};
 }
 export async function persistSessionState(session:Session){if(!current)return;await current.repository.saveIdentity(session.identity,session.name);for(const saved of session.rooms)await current.repository.saveRoom(saved);}
-export async function refreshPersistentIdentity(){if(!current)return;await current.repository.pull();return current.repository.loadIdentityState();}
+export async function refreshPersistentState(language:'zh'|'en'){if(!current)return;await current.repository.pull();return current.repository.restore(language);}
 export async function deleteSavedRoom(id:string){await current?.repository.deleteRoom(id);}
 export async function exportRecoveryFile(){if(!current)return;const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),code=await keys.getRecoveryCode(current.profile.id);return code?recoveryFile(current.profile.id,code):undefined;}
 export async function logoutPersistent(){const id=current?.profile.id||activeProfileId();chooseTemporary();if(id)try{const db=await openPrivateDatabase();await new IndexedDbMasterKeys(db).deleteAccountSession(id);}catch{}}
