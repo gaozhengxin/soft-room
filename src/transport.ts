@@ -1,8 +1,10 @@
 import {createLightNode} from '@waku/sdk';
 import {FilterCore,FilterCodecs,LightPushCore} from '@waku/core';
-import {bootstrapPeers} from './gateways.ts';
+import {activeBootstrapPeers} from './gateways.ts';
+import {regionBypassed} from './region-bypass.ts';
+import {pushViaWakuStore} from './storage.ts';
 import {GatewayHealth,firstAcknowledged} from './gateway-health.ts';
-import {topic,type Room} from './protocol.ts';
+import {roomId,topic,type Room} from './protocol.ts';
 export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signal?:AbortSignal){
  const lifetime=new AbortController(),health=new GatewayHealth();let stopped=false;
  const abortError=()=>new DOMException('Cancelled','AbortError');
@@ -24,7 +26,7 @@ export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signa
  const onOnline=()=>{health.clear();};
  if(signal?.aborted)throw abortError();signal?.addEventListener('abort',onAbort,{once:true});
  try{
-  node=await createLightNode({defaultBootstrap:true,bootstrapPeers,numPeersToUse:1,connectionManager:{maxBootstrapPeers:6,maxConnections:10},libp2p:{hideWebSocketInfo:true}});
+  node=await createLightNode({defaultBootstrap:true,bootstrapPeers:activeBootstrapPeers(),numPeersToUse:1,connectionManager:{maxBootstrapPeers:6,maxConnections:10},libp2p:{hideWebSocketInfo:true}});
   if(stopped){await node.stop();throw abortError();}
   const current=node,decoder=current.createDecoder({contentTopic:topic(room)}),encoder=current.createEncoder({contentTopic:topic(room),ephemeral:true}),archiveEncoder=current.createEncoder({contentTopic:topic(room),ephemeral:false});
   // Own Filter acknowledgements explicitly; repeated SDK subscribe() can return a cached success.
@@ -69,12 +71,12 @@ export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signa
     const send=sendTail.then(async()=>{
      if(stopped)throw abortError();
      const candidates=health.available(live()).filter(key=>!sending.has(key)).slice(0,4);
-     await firstAcknowledged(candidates.map(async key=>{
+     try{await firstAcknowledged(candidates.map(async key=>{
       const peer=peers.get(key);if(!peer)throw Error('Gateway disconnected');sending.add(key);
       try{return await bounded(push.send(archive?archiveEncoder:encoder,{payload},peer.id));}catch(error){if(error instanceof Error&&error.message==='Gateway timeout')retire(key,peer.connection);throw error;}finally{sending.delete(key);}
-     }),result=>!!result.success);
+     }),result=>!!result.success);return false;}catch(error){if(!regionBypassed())throw error;await bounded(pushViaWakuStore(roomId(room),payload),12000);return true;}
     });
-    sendTail=send.catch(()=>{});try{await send;}finally{queued--;}
+    sendTail=send.catch(()=>{});try{return await send;}finally{queued--;}
    },
    async history(receivePage:(payloads:Uint8Array[])=>void){
     const deadline=Date.now()+45000,tried=new Set<string>();let successes=0;

@@ -5,6 +5,7 @@ import './style.css';
 import './sssp.css';
 import './access.css';
 import {browserLanguage,terminal,localAddress,blockedCountry,parseTrace,accessCodeDigest,validAccessDigest} from './access.ts';
+import {REGION_BYPASS_STORAGE_KEY,regionBypassed} from './region-bypass.ts';
 const language=browserLanguage(navigator.languages?.length?navigator.languages:[navigator.language]);
 const info=terminal(navigator.userAgent,navigator.maxTouchPoints);
 document.documentElement.lang=language==='zh'?'zh-CN':'en';document.documentElement.dataset.theme='soft';
@@ -16,14 +17,9 @@ if(native&&Capacitor.getPlatform()==='android'){
 }
 const text={zh:{checking:'正在检查访问环境',wait:'请稍候…',browser:'请使用独立浏览器打开',browserDetail:'此浏览器暂不支持。请使用 Safari、Chrome、Edge 或 Firefox 打开。',guide:'可从右上角菜单选择「在浏览器中打开」，或复制链接后粘贴到系统浏览器。',open:'尝试在浏览器中打开',copy:'复制链接',copied:'链接已复制',copyManual:'请复制下面的链接',region:'暂不提供服务',regionDetail:'当前网络所在地区不在服务范围内。',codeLabel:'访问代码',codePlaceholder:'输入访问代码',codeSubmit:'继续访问',codeInvalid:'代码不正确。',failed:'暂时无法确认网络所在地区',failedDetail:'请检查网络后重试。',retry:'重试',loadFailed:'页面加载失败'},en:{checking:'Checking access',wait:'Please wait…',browser:'Open in a standalone browser',browserDetail:'This browser is not supported. Please use Safari, Chrome, Edge or Firefox.',guide:'Choose “Open in browser” from the app menu, or copy this link into your system browser.',open:'Try opening in a browser',copy:'Copy link',copied:'Link copied',copyManual:'Copy the link below',region:'Service unavailable',regionDetail:'Service is not available in your current network region.',codeLabel:'Access code',codePlaceholder:'Enter access code',codeSubmit:'Continue',codeInvalid:'Incorrect code.',failed:'Unable to check your network region',failedDetail:'Check your connection and try again.',retry:'Retry',loadFailed:'Unable to load the page'}}[language];
 const app=document.getElementById('app')!;
-const bypassStorageKey='soft-room-region-bypass-v1';
 const bypassHash=(import.meta.env.VITE_REGION_BYPASS_SHA256||'').trim().toLowerCase();
 let runtimeBypass=false;
-function regionBypassed(){
- if(runtimeBypass)return true;
- if(!validAccessDigest(bypassHash))return false;
- try{return sessionStorage.getItem(bypassStorageKey)===bypassHash;}catch{return false;}
-}
+const accessBypassed=()=>runtimeBypass||regionBypassed();
 function screen(title:string,detail:string,loading=false){
  app.replaceChildren();const panel=document.createElement('section');panel.className='access-screen';panel.setAttribute('aria-live','polite');
  const mark=document.createElement('div');mark.className=loading?'access-spinner':'access-mark';if(!loading){const img=document.createElement('img');img.src='/sssp-emblem.svg';img.alt='';mark.append(img);}
@@ -45,7 +41,7 @@ function blockedRegion(){
   form.addEventListener('submit',event=>{event.preventDefault();void(async()=>{
    submit.disabled=true;const digest=await accessCodeDigest(input.value);submit.disabled=false;
    if(digest!==bypassHash){status.textContent=text.codeInvalid;input.select();input.focus({preventScroll:true});return;}
-   runtimeBypass=true;try{sessionStorage.setItem(bypassStorageKey,bypassHash);}catch{}void start();
+   runtimeBypass=true;try{sessionStorage.setItem(REGION_BYPASS_STORAGE_KEY,bypassHash);}catch{}void start();
   })();});
  };
  mark.addEventListener('click',()=>{taps+=1;if(taps>=5){reveal();return;}window.clearTimeout(resetTimer);resetTimer=window.setTimeout(()=>{taps=0;},3000);});
@@ -64,7 +60,7 @@ async function start(){
  screen(text.checking,text.wait,true);
  if(native||!localAddress(location.hostname))try{
   const result=parseTrace(await readLocation(native,import.meta.env.VITE_PUBLIC_ORIGIN));
-  if(blockedCountry(result.country)&&!regionBypassed()){blockedRegion();return;}
+  if(blockedCountry(result.country)&&!accessBypassed()){blockedRegion();return;}
  }catch{const panel=screen(text.failed,text.failedDetail);button(panel,text.retry,()=>void start());return;}
  try{app.replaceChildren();const {identityStartup}=await import('./persistent/startup.ts');await identityStartup(app,language);await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
 }

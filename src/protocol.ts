@@ -7,7 +7,8 @@ const utf8 = new TextEncoder();
 const text = new TextDecoder('utf-8', { fatal: true });
 export type Room = { v: 1 | 2; key: string; seed?: string; name: string; pow: 0 | 16 | 20 | 1000 };
 export type Identity = { secret: Uint8Array; publicKey: string };
-export type Attachment={v:1;name:string;mime:string;bytes:number;media:'image'|'video'|'audio'|'pdf'|'markdown'|'file';quality:'original'|'balanced'|'compact';original:{id:string;size:number};preview?:{id:string;size:number;mime:string}};
+export type AttachmentRef={id:string;size:number;storage?:'logos';cipherSha256?:string};
+export type Attachment={v:1;name:string;mime:string;bytes:number;media:'image'|'video'|'audio'|'pdf'|'markdown'|'file';quality:'original'|'balanced'|'compact';original:AttachmentRef;preview?:(AttachmentRef&{mime:string})};
 export type Message = { v: 1; room: string; id: string; sender: string; nonce: number; kind?: 'heartbeat'|'mesh'|'file'; file?:Attachment;mesh?:Membership|null;channels?:Network[]; epoch?: number; time: number; text: string; nickname?: string };
 export const makeIdentity = (): Identity => { const secret = randomBytes(32); return { secret, publicKey: bytesToHex(ed25519.getPublicKey(secret)) }; };
 export const shortName = (key: string) => `旅人 ${key.slice(0, 8)}`;
@@ -80,7 +81,7 @@ export function normalizeNickname(value:string):string {
   if(name.length>24 || /[\u0000-\u001f\u007f]/.test(name))throw Error('Invalid nickname');
   return name;
 }
-export function validAttachment(file:unknown):file is Attachment{const f=file as Attachment,ref=(value:unknown)=>{const r=value as {id:string;size:number};return !!r&&/^[a-f0-9]{64}$/.test(r.id)&&Number.isSafeInteger(r.size)&&r.size>0&&r.size<=200*1024*1024;};return !!f&&f.v===1&&typeof f.name==='string'&&!!f.name&&f.name.length<=160&&!/[\u0000-\u001f\u007f]/.test(f.name)&&typeof f.mime==='string'&&f.mime.length<=100&&Number.isSafeInteger(f.bytes)&&f.bytes>0&&f.bytes<=190*1024*1024&&['image','video','audio','pdf','markdown','file'].includes(f.media)&&['original','balanced','compact'].includes(f.quality)&&ref(f.original)&&(!f.preview||(ref(f.preview)&&typeof f.preview.mime==='string'&&f.preview.mime.length<=100));}
+export function validAttachment(file:unknown):file is Attachment{const f=file as Attachment,ref=(value:unknown)=>{const r=value as AttachmentRef;if(!r||!Number.isSafeInteger(r.size)||r.size<=0)return false;const legacy=r.size<=200*1024*1024&&/^[a-f0-9]{64}$/.test(r.id)&&r.storage===undefined&&r.cipherSha256===undefined,logos=r.size<=64*1024*1024&&/^[A-Za-z0-9]{20,200}$/.test(r.id)&&r.storage==='logos'&&typeof r.cipherSha256==='string'&&/^[a-f0-9]{64}$/.test(r.cipherSha256);return legacy||logos;};return !!f&&f.v===1&&typeof f.name==='string'&&!!f.name&&f.name.length<=160&&!/[\u0000-\u001f\u007f]/.test(f.name)&&typeof f.mime==='string'&&f.mime.length<=100&&Number.isSafeInteger(f.bytes)&&f.bytes>0&&f.bytes<=190*1024*1024&&['image','video','audio','pdf','markdown','file'].includes(f.media)&&['original','balanced','compact'].includes(f.quality)&&ref(f.original)&&(!f.preview||(ref(f.preview)&&typeof f.preview.mime==='string'&&f.preview.mime.length<=100));}
 export function seal(r: Room, identity: Identity, nonce: number, body: string, nickname = '', epoch=dayEpoch(),kind?:'heartbeat'|'mesh'|'file',mesh?:Membership|null,channels?:Network[],file?:Attachment): { message: Message; payload: Uint8Array } {
   if ((kind!=='heartbeat'&&kind!=='file'&&!body.trim()) || body.length > (kind==='mesh'?12000:2000)||kind==='file'&&(!validAttachment(file)||body!=='')) throw Error('消息内容无效。');
   const message: Message = {v:1,room:roomId(r),id:bytesToHex(randomBytes(16)),sender:identity.publicKey,nonce,time:Date.now(),text:kind==='heartbeat'?'':body.trim(),...(kind?{kind}:{})};

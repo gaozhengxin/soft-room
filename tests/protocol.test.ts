@@ -51,6 +51,9 @@ test('file references are encrypted, signed, bounded and available in history',(
  const r=makeRoom('files',false),i=makeIdentity(),file:Attachment={v:1,name:'报告.pdf',mime:'application/pdf',bytes:1234,media:'pdf',quality:'original',original:{id:'a'.repeat(64),size:1275}};
  const packet=seal(r,i,0,'','',undefined,'file',undefined,undefined,file);
  assert.deepEqual(open(r,packet.payload).file,file);assert.deepEqual(openHistory(r,packet.payload,packet.message.time+1000).file,file);
+ const logos:Attachment={...file,original:{id:'z'.repeat(40),size:1275,storage:'logos',cipherSha256:'b'.repeat(64)}};
+ assert.deepEqual(open(r,seal(r,i,0,'','',undefined,'file',undefined,undefined,logos).payload).file,logos);
+ assert.throws(()=>seal(r,i,0,'','',undefined,'file',undefined,undefined,{...logos,original:{...logos.original,cipherSha256:undefined}}));
  assert.throws(()=>seal(r,i,0,'caption','',undefined,'file',undefined,undefined,file));
  assert.throws(()=>seal(r,i,0,'','',undefined,'file',undefined,undefined,{...file,name:'bad\nname'}));
 });
