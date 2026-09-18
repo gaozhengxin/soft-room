@@ -43,7 +43,7 @@ async function installRecovery(account:SignedInAccount,session:Session,keys:Inde
 function activate(profile:PersistentProfile,repository:PortableStateRepository){const known=profiles().filter(item=>item.id!==profile.id);known.unshift(profile);saveProfiles(known);current={profile,repository};try{sessionStorage.setItem(ACTIVE,profile.id);sessionStorage.removeItem(RECOVERY_PENDING);}catch{}}
 
 export async function continuePersistent(profile:PersistentProfile,language:'zh'|'en'){
- const {keys,local,key}=await localRepository(profile);if(!key)throw Error('Recovery key required');const repository=new PortableStateRepository(key,local),savedAccount=await keys.getAccountSession(profile.id,key);
+ const {keys,local,key}=await localRepository(profile);if(!key)throw Error('Recovery key required');const repository=new PortableStateRepository(key,local),savedAccount=await keys.getAccountSession(profile.id,key);if(!savedAccount)throw Error('Account sign-in required');
  let resolvedProfile=profile;if(savedAccount)try{const write=sessionWriter(keys,profile.id,key),account=await resumeAccount(profile.pds,savedAccount,write);repository.setRemote(account.records);if(account.session.session)await write(account.session.session);await repository.pull();resolvedProfile={...profile,label:account.handle};}catch{repository.setRemote(undefined);}
  const restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');activate(resolvedProfile,repository);return restored;
 }
