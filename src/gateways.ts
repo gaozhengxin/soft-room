@@ -11,5 +11,5 @@ export const bootstrapPeers=[
   "/dns4/node-01.ac-cn-hongkong-c.waku.test.status.im/tcp/8000/wss/p2p/16Uiu2HAkzHaTP5JsUwfR9NR8Rj9HC24puS6ocaU8wze4QrXr9iXp"
 ];
 
-export const privateWakuPeer='/dns4/waku.wakukusmartrecipe.uk/tcp/443/wss/p2p/16Uiu2HAmKxi3V5ZG3iNr3gGfBWYYJJjmeejYEjtnDAZssTcuLXE4';
+export const privateWakuPeer='/dns4/waku.wakukusmartrecipe.uk/tcp/443/wss/p2p/16Uiu2HAm6hZ56yhEYhPNdA1vwSf5CTXtxEyHXuS86xfKYovTvNEv';
 export function activeBootstrapPeers(){return regionBypassed()?[privateWakuPeer,...bootstrapPeers]:bootstrapPeers;}
