@@ -1,6 +1,6 @@
 import {ed25519} from '@noble/curves/ed25519.js';
 import {bytesToHex,hexToBytes,randomBytes} from '@noble/hashes/utils.js';
-import {invite,parseInvite,roomId,type Identity,type Room} from '../protocol.ts';
+import {invite,normalizeNickname,parseInvite,roomId,type Identity,type Room} from '../protocol.ts';
 import type {SavedRoom,Session} from '../session.ts';
 
 export const IDENTITY_COLLECTION='uk.wakukusmartrecipe.soft.identity';
@@ -9,7 +9,7 @@ export const IDENTITY_RKEY='self';
 const utf8=new TextEncoder(),text=new TextDecoder('utf-8',{fatal:true});
 
 export type EncryptedRecord={$type:string;version:1;alg:'A256GCM';iv:string;ciphertext:string;updatedAt:string};
-export type PortableIdentityState={version:1;wakuPrivateKey:string};
+export type PortableIdentityState={version:1;wakuPrivateKey:string;username?:string};
 export type PortableRoomState={version:1;roomId:string;room:Room;created:boolean;nickname?:string;nonce?:number;epoch?:number};
 export type StoredRecord={collection:string;rkey:string;value:EncryptedRecord};
 export interface RecordStore {get(collection:string,rkey:string):Promise<EncryptedRecord|undefined>;list(collection:string):Promise<StoredRecord[]>;put(record:StoredRecord):Promise<void>;delete(collection:string,rkey:string):Promise<void>}
@@ -31,8 +31,9 @@ export async function decryptState<T>(key:CryptoKey,collection:string,rkey:strin
 }
 export async function generateMasterKey(){return crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
 
-function identityState(identity:Identity):PortableIdentityState{return {version:1,wakuPrivateKey:bytesToHex(identity.secret)};}
-function restoreIdentity(value:PortableIdentityState):Identity {if(value.version!==1)throw Error('Unsupported identity state version');if(!/^[a-f0-9]{64}$/.test(value.wakuPrivateKey))throw Error('Invalid identity state');const secret=hexToBytes(value.wakuPrivateKey);return {secret,publicKey:bytesToHex(ed25519.getPublicKey(secret))};}
+function identityState(identity:Identity,username?:string):PortableIdentityState{const name=username===undefined?'':normalizeNickname(username);return {version:1,wakuPrivateKey:bytesToHex(identity.secret),...(name?{username:name}:{})};}
+function restoreIdentityState(value:PortableIdentityState){if(value.version!==1)throw Error('Unsupported identity state version');if(!/^[a-f0-9]{64}$/.test(value.wakuPrivateKey))throw Error('Invalid identity state');const secret=hexToBytes(value.wakuPrivateKey),identity={secret,publicKey:bytesToHex(ed25519.getPublicKey(secret))};const username=value.username===undefined?'':normalizeNickname(value.username);return {identity,...(username?{username}:{})};}
+function restoreIdentity(value:PortableIdentityState):Identity{return restoreIdentityState(value).identity;}
 function roomState(saved:SavedRoom):PortableRoomState{return {version:1,roomId:roomId(saved.room),room:{...saved.room},created:saved.created,...(saved.nickname?{nickname:saved.nickname}:{}),...(saved.nonce!==undefined?{nonce:saved.nonce}:{}),...(saved.epoch!==undefined?{epoch:saved.epoch}:{})};}
 function restoreRoom(value:PortableRoomState):SavedRoom {if(value.version!==1)throw Error('Unsupported room state version');const room=parseInvite(invite(value.room));if(room.v===2&&typeof value.room.key==='string'&&/^[a-f0-9]{64}$/.test(value.room.key))room.key=value.room.key;if(roomId(room)!==value.roomId)throw Error('Invalid room state');return {room,created:value.created===true,...(typeof value.nickname==='string'?{nickname:value.nickname}:{}),...(Number.isSafeInteger(value.nonce)?{nonce:value.nonce}:{}),...(Number.isSafeInteger(value.epoch)?{epoch:value.epoch}:{})};}
 const randomRkey=()=>bytesToHex(randomBytes(16));
@@ -42,11 +43,12 @@ export class PortableStateRepository {
  constructor(key:CryptoKey,local:RecordStore,remote?:RecordStore){this.key=key;this.local=local;this.remote=remote;}
  setRemote(remote:RecordStore|undefined){this.remote=remote;}
  async pull(){if(!this.remote)return;for(const collection of [IDENTITY_COLLECTION,ROOM_COLLECTION])for(const record of await this.remote.list(collection)){if(collection===IDENTITY_COLLECTION)restoreIdentity(await decryptState<PortableIdentityState>(this.key,collection,record.rkey,record.value));else restoreRoom(await decryptState<PortableRoomState>(this.key,collection,record.rkey,record.value));await this.local.put(record);}}
- async saveIdentity(identity:Identity){const record={collection:IDENTITY_COLLECTION,rkey:IDENTITY_RKEY,value:await encryptState(this.key,IDENTITY_COLLECTION,IDENTITY_RKEY,identityState(identity))};await this.local.put(record);await this.remote?.put(record);}
+ async saveIdentity(identity:Identity,username?:string){const record={collection:IDENTITY_COLLECTION,rkey:IDENTITY_RKEY,value:await encryptState(this.key,IDENTITY_COLLECTION,IDENTITY_RKEY,identityState(identity,username))};await this.local.put(record);await this.remote?.put(record);}
  async loadIdentity():Promise<Identity|undefined>{const value=await this.local.get(IDENTITY_COLLECTION,IDENTITY_RKEY);return value?restoreIdentity(await decryptState<PortableIdentityState>(this.key,IDENTITY_COLLECTION,IDENTITY_RKEY,value)):undefined;}
+ async loadIdentityState(){const value=await this.local.get(IDENTITY_COLLECTION,IDENTITY_RKEY);return value?restoreIdentityState(await decryptState<PortableIdentityState>(this.key,IDENTITY_COLLECTION,IDENTITY_RKEY,value)):undefined;}
  private async roomRecords(){const output:Array<{record:StoredRecord;state:PortableRoomState}>=[];for(const record of await this.local.list(ROOM_COLLECTION))output.push({record,state:await decryptState<PortableRoomState>(this.key,ROOM_COLLECTION,record.rkey,record.value)});return output;}
  async saveRoom(saved:SavedRoom){const id=roomId(saved.room),existing=(await this.roomRecords()).find(item=>item.state.roomId===id),rkey=existing?.record.rkey||randomRkey();const record={collection:ROOM_COLLECTION,rkey,value:await encryptState(this.key,ROOM_COLLECTION,rkey,roomState(saved))};await this.local.put(record);await this.remote?.put(record);}
  async loadRooms(){const rooms:SavedRoom[]=[],seen=new Set<string>();for(const {state} of await this.roomRecords()){if(seen.has(state.roomId))continue;seen.add(state.roomId);rooms.push(restoreRoom(state));}return rooms;}
  async deleteRoom(id:string){for(const {record,state} of await this.roomRecords())if(state.roomId===id){await this.local.delete(ROOM_COLLECTION,record.rkey);await this.remote?.delete(ROOM_COLLECTION,record.rkey);}}
- async restore(language:'zh'|'en'):Promise<Session|undefined>{const identity=await this.loadIdentity();if(!identity)return;return {identity,rooms:await this.loadRooms(),language};}
+ async restore(language:'zh'|'en'):Promise<Session|undefined>{const saved=await this.loadIdentityState();if(!saved)return;return {identity:saved.identity,...(saved.username?{name:saved.username}:{}),rooms:await this.loadRooms(),language};}
 }

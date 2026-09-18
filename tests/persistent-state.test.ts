@@ -22,8 +22,12 @@ test('persistent identity restores the same Waku public key and temporary genera
  assert.equal((await repo.loadIdentity())?.publicKey,identity.publicKey);assert.notEqual(makeIdentity().publicKey,identity.publicKey);await assert.rejects(crypto.subtle.exportKey('raw',key));
 });
 test('serialized PDS records never contain Waku private keys, room keys or invite capabilities in plaintext',async()=>{
- const key=await generateMasterKey(),store=new MemoryStore(),repo=new PortableStateRepository(key,store),identity=makeIdentity(),room=saved('secret room','a');await repo.saveIdentity(identity);await repo.saveRoom(room);
- const serialized=JSON.stringify([...store.records.values()]);assert.equal(serialized.includes(Buffer.from(identity.secret).toString('hex')),false);assert.equal(serialized.includes(room.room.key),false);assert.equal(serialized.includes(roomId(room.room)),false);
+ const key=await generateMasterKey(),store=new MemoryStore(),repo=new PortableStateRepository(key,store),identity=makeIdentity(),room=saved('secret room','a');await repo.saveIdentity(identity,'alice.test');await repo.saveRoom(room);
+ const serialized=JSON.stringify([...store.records.values()]);assert.equal(serialized.includes(Buffer.from(identity.secret).toString('hex')),false);assert.equal(serialized.includes(room.room.key),false);assert.equal(serialized.includes(roomId(room.room)),false);assert.equal(serialized.includes('alice.test'),false);
+});
+test('username is restored with the persistent identity',async()=>{
+ const key=await generateMasterKey(),store=new MemoryStore(),repo=new PortableStateRepository(key,store),identity=makeIdentity();await repo.saveIdentity(identity,'alice.test');
+ const restored=await repo.restore('en');assert.equal(restored?.identity.publicKey,identity.publicKey);assert.equal(restored?.name,'alice.test');
 });
 test('independent and concurrent room updates preserve both records',async()=>{
  const key=await generateMasterKey(),remote=new MemoryStore(),a=new PortableStateRepository(key,new MemoryStore(),remote),b=new PortableStateRepository(key,new MemoryStore(),remote),roomA=saved('A','a'),roomB=saved('B','b');await Promise.all([a.saveRoom(roomA),b.saveRoom(roomB)]);

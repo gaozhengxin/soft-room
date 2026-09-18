@@ -13,6 +13,7 @@ import settingsIcon from './icons/settings.svg?raw';
 import downloadIcon from './icons/download.svg?raw';
 import paperclipIcon from './icons/paperclip.svg?raw';
 import closeIcon from './icons/x.svg?raw';
+import logoutIcon from './icons/log-out.svg?raw';
 import {hasAndroidUpdate,latestAndroidUpdate,type AndroidUpdateManifest} from './android-update.ts';
 import './style.css';
 import './sssp.css';
@@ -22,7 +23,7 @@ import {effectiveName,type ChatEntry} from './names.ts';
 import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, openHistory, type Room, type Message } from './protocol.ts';
 import { computeReadKey, computeWork, type WorkProgress } from './pow.ts';
 import { loadSession, saveSession, freshSession, encodeSession, decodeSession, SESSION_KEY, type SavedRoom } from './session.ts';
-import {activeProfile,deleteSavedRoom,exportRecoveryFile,isPersistent,logoutPersistent,persistSessionState} from './persistent/runtime.ts';
+import {activeProfile,deleteSavedRoom,exportRecoveryFile,isPersistent,logoutPersistent,persistSessionState,recoveryPending} from './persistent/runtime.ts';
 import {saveNativeFileDetailed} from './native-files.ts';
 import { translate, type TextKey, type Language } from './i18n.ts';
 import {observeMember,online,HEARTBEAT_INTERVAL,type Member} from './members.ts';
@@ -116,7 +117,7 @@ const manager=document.querySelector('.room-manager')!;
 const brand=document.querySelector('.brand')!;
 sidebar.replaceChildren(brand);sidebar.insertAdjacentHTML('afterbegin',`<button id="sidebar-close" type="button" class="icon-button sidebar-close" data-label="close">${closeIcon}</button>`);
 sidebar.insertAdjacentHTML('beforeend','<button id="new-room" class="primary" data-i18n="newRoom"></button>');sidebar.append(manager);
-sidebar.insertAdjacentHTML('beforeend',`<div class="sidebar-bottom"><p class="identity-heading" data-i18n="myIdentity"></p><button id="my-identity" class="profile-button"><span class="profile-avatar" aria-hidden="true">${userIcon}</span><span class="profile-copy"><b id="identity"></b><small data-i18n="temporaryIdentity"></small></span><span class="profile-settings" aria-hidden="true">${settingsIcon}</span></button><p data-i18n="temporaryShort"></p></div>`);
+sidebar.insertAdjacentHTML('beforeend',`<div class="sidebar-bottom"><p class="identity-heading" data-i18n="myIdentity"></p><button id="my-identity" class="profile-button"><span class="profile-avatar" aria-hidden="true">${userIcon}</span><span class="profile-copy"><b id="identity"></b><small data-i18n="temporaryIdentity"></small></span><span class="profile-settings" aria-hidden="true">${settingsIcon}</span></button><p data-i18n="temporaryShort"></p><button id="logout" class="sidebar-logout" type="button">${logoutIcon}<span data-i18n="logout"></span></button></div>`);
 const releaseLink='https://github.com/gaozhengxin/soft-room/releases/latest';
 const androidChannel=import.meta.env.VITE_ANDROID_CHANNEL==='test'?'test':'stable';
 const androidApkLink=androidChannel==='test'?'https://github.com/gaozhengxin/soft-room/releases/download/android-test/Soft-Room-android-test.apk':'https://github.com/gaozhengxin/soft-room/releases/latest/download/Soft-Room-android.apk';
@@ -188,16 +189,16 @@ async function sendHeartbeat(){
  heartbeatFlight=flight;await flight;if(heartbeatFlight===flight)heartbeatFlight=undefined;
 }
 function renderCache(){
- const persistent=isPersistent(),profile=activeProfile();
- $('cache-warning').textContent=t(cacheFailed?'cacheFailed':persistent?'persistentSession':'sessionWarning',{name:profile?.label||''});
+ const persistent=isPersistent(),profile=activeProfile(),pending=recoveryPending();
+ $('cache-warning').textContent=t(cacheFailed?'cacheFailed':pending?'recoveryTemporary':persistent?'persistentSession':'sessionWarning',{name:profile?.label||''});
  document.querySelectorAll<HTMLElement>('[data-i18n="temporaryIdentity"]').forEach(node=>node.textContent=t(persistent?'persistentIdentity':'temporaryIdentity'));
  document.querySelectorAll<HTMLElement>('[data-i18n="temporaryShort"]').forEach(node=>node.textContent=t(persistent?'persistentShort':'temporaryShort'));
- const detail=document.querySelector<HTMLElement>('[data-i18n="sessionDetail"]');if(detail)detail.textContent=t(persistent?'persistentDetail':'sessionDetail');
+ const detail=document.querySelector<HTMLElement>('[data-i18n="sessionDetail"]');if(detail)detail.textContent=t(pending?'recoveryTemporaryDetail':persistent?'persistentDetail':'sessionDetail');
  $('recovery-file-tools').hidden=!persistent;
  document.querySelector('.session-banner')?.classList.toggle('cache-error',cacheFailed);
  $('identity').textContent=session.name||t('visitor',{id:session.identity.publicKey.slice(0,8)});
  $('identity-key').textContent=session.identity.publicKey;
- $('cache-alert').hidden=!cacheFailed;$('cache-alert').textContent=cacheFailed?t('cacheFailed'):'';
+ $('cache-alert').hidden=!cacheFailed&&!pending;$('cache-alert').textContent=cacheFailed?t('cacheFailed'):pending?t('recoveryTemporary'):'';
  $('identity').title=t(cacheFailed?'cacheFailed':'sessionWarning');
 }
 function renderNotice(){
@@ -374,6 +375,11 @@ $('clear-session').addEventListener('click',async()=>{
  logoutPersistent();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Save below reports storage failure. */ }
  const theme=session.theme;session=freshSession(session.language);session.theme=theme;histories.clear();seenIds.clear();membersByRoom.clear();channelMemory.clear();save();languageChanged();notice('sessionCleared');
+});
+$('logout').addEventListener('click',async()=>{
+ if(!confirm(t('logoutConfirm')))return;closePanels();await disconnect();logoutPersistent();
+ try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
+ location.reload();
 });
 $('skin').addEventListener('change',()=>{session.theme=$<HTMLSelectElement>('skin').value as 'soft'|'sssp'|'kabutack';save();languageChanged();});
 $('language').addEventListener('change',()=>{session.language=$<HTMLSelectElement>('language').value as Language;save();languageChanged();});

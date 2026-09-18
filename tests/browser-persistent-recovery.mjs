@@ -70,15 +70,20 @@ try{
  const downloadPromise=first.waitForEvent('download');await first.getByRole('button',{name:'Download recovery file'}).click();const download=await downloadPromise,path=await download.path();assert(path);
  const recoveryContents=readFileSync(path,'utf8'),recovery=JSON.parse(recoveryContents);assert.equal(recovery.type,'soft-room-recovery');assert.equal(recovery.account,did);assert.match(recovery.recoveryCode,/^SRK1\./);
  await first.getByRole('button',{name:/I saved it safely/}).click();
- const firstSession=JSON.parse(await first.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.match(firstSession.secret,/^[a-f0-9]{64}$/);
+ const firstSession=JSON.parse(await first.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.match(firstSession.secret,/^[a-f0-9]{64}$/);assert.equal(firstSession.name,'alice.test');
  assert(records.has('uk.wakukusmartrecipe.soft.identity/self'));assert(records.has('uk.wakukusmartrecipe.soft.recovery/self'));
 
  const secondContext=await browser.newContext({locale:'en-US'}),second=await secondContext.newPage();await installRoutes(second);
  await openForm(second,false);
  await second.getByLabel(/Recovery file/).setInputFiles({name:'Soft-Room-Recovery.softroom-recovery',mimeType:'application/json',buffer:Buffer.from(recoveryContents)});
+ await second.getByText('Recovery file loaded',{exact:true}).waitFor();assert(await second.getByText('Recovery file loaded',{exact:true}).evaluate(node=>node.classList.contains('recovery-loaded')));
  await second.getByRole('button',{name:'Sign in and restore'}).click();
  await second.waitForFunction(()=>sessionStorage.getItem('soft-room/persistent-active/v1')!==null);
- const secondSession=JSON.parse(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.equal(secondSession.secret,firstSession.secret);assert.equal(await second.evaluate(()=>sessionStorage.getItem('soft-room/persistent-active/v1')),did);
- await secondContext.close();await firstContext.close();
- console.log('PASS recovery file restores the same persistent Waku identity on a new device');
+ const secondSession=JSON.parse(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.equal(secondSession.secret,firstSession.secret);assert.equal(secondSession.name,'alice.test');assert.equal(await second.evaluate(()=>sessionStorage.getItem('soft-room/persistent-active/v1')),did);
+ second.once('dialog',dialog=>dialog.accept());await second.getByRole('button',{name:'Log out',exact:true}).click();await second.getByRole('heading',{name:'Choose your identity'}).waitFor();assert.equal(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')),null);
+
+ const thirdContext=await browser.newContext({locale:'en-US'}),third=await thirdContext.newPage();await installRoutes(third);await openForm(third,false);await third.getByRole('button',{name:'Sign in and restore'}).click();await third.getByRole('alert').filter({hasText:/current identity is still temporary/}).waitFor();
+ const thirdSession=JSON.parse(await third.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.equal(thirdSession.name,'alice.test');assert.notEqual(thirdSession.secret,firstSession.secret);assert.equal(await third.evaluate(()=>sessionStorage.getItem('soft-room/persistent-active/v1')),null);assert.equal(await third.evaluate(()=>sessionStorage.getItem('soft-room/persistent-recovery-pending/v1')),'1');
+ await thirdContext.close();await secondContext.close();await firstContext.close();
+ console.log('PASS recovery restores persistent identity, no-file login stays temporary, and logout returns to identity selection');
 }finally{await browser.close();}

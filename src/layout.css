@@ -26,6 +26,7 @@ body{margin:0;overflow:hidden}.shell{max-width:none!important;width:100%;height:
 #my-identity{border:0;border-radius:12px;background:transparent;box-shadow:none;padding:8px 4px!important;gap:10px}
 #my-identity:hover{background:color-mix(in srgb,var(--muted) 8%,transparent);transform:none}
 #my-identity:active{box-shadow:var(--inset);transform:scale(.98)}
+.sidebar-logout{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:38px;margin-top:12px;padding:7px 10px!important;border:0;border-radius:11px;background:transparent!important;box-shadow:none!important;color:var(--muted);font-size:11px}.sidebar-logout:hover{color:var(--ink);background:color-mix(in srgb,var(--muted) 8%,transparent)!important}.sidebar-logout:active{box-shadow:var(--inset)!important;transform:scale(.98)}.sidebar-logout svg{width:16px;height:16px;flex:none}
 .profile-avatar{display:grid;place-items:center;flex:0 0 40px;height:40px;border-radius:50%;background:var(--surface);box-shadow:var(--inset)}
 .profile-avatar svg{width:21px;height:21px}
 .profile-copy{flex:1;min-width:0}
