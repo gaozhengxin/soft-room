@@ -3,6 +3,7 @@ import {Capacitor,registerPlugin} from '@capacitor/core';
 type NativeFilesPlugin={
  beginSave(options:{name:string;mime:string}):Promise<{cancelled?:boolean;token?:string}>;
  writeSaveChunk(options:{token:string;data:string;final:boolean}):Promise<void>;
+ openTextFile():Promise<{cancelled?:boolean;text?:string}>;
 };
 
 const NativeFiles=registerPlugin<NativeFilesPlugin>('NativeFiles');
@@ -27,3 +28,11 @@ export async function saveNativeFileDetailed(blob:Blob,name:string):Promise<'uns
  return 'saved';
 }
 export async function saveNativeFile(blob:Blob,name:string){return (await saveNativeFileDetailed(blob,name))!=='unsupported';}
+export function nativeAndroidFiles(){return Capacitor.getPlatform()==='android';}
+export async function openNativeTextFile():Promise<{status:'unsupported'|'cancelled'|'selected';text?:string}>{
+ if(!nativeAndroidFiles())return {status:'unsupported'};
+ const result=await NativeFiles.openTextFile();
+ if(result.cancelled)return {status:'cancelled'};
+ if(typeof result.text!=='string')throw Error('Unable to read file');
+ return {status:'selected',text:result.text};
+}
