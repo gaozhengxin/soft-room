@@ -96,7 +96,7 @@ $('choose-create').onclick=()=>{ $('create').hidden=false;$('join').hidden=true;
 $('choose-join').onclick=()=>{ $('create').hidden=true;$('join').hidden=false;$('choose-create').setAttribute('aria-pressed','false');$('choose-join').setAttribute('aria-pressed','true');};
 $('choose-create').click();
 const identityPanel=makeDialog('identity-dialog','myIdentity');
-identityPanel.innerHTML='<span class="pill" data-i18n="temporaryIdentity"></span><p id="identity-key" class="identity-key"></p><form id="global-name-form"><label for="global-name" data-i18n="globalName"></label><input id="global-name" maxlength="24" autocomplete="off"/><p class="scope-hint" data-i18n="globalNameHint"></p><button class="primary" data-i18n="saveName"></button><p id="identity-feedback" role="status"></p></form><section id="recovery-file-tools" class="recovery-file-tools" hidden><p class="recovery-warning" data-i18n="recoveryFileSafety"></p><button id="download-recovery-file" type="button" data-i18n="recoveryFileDownload"></button><p id="recovery-file-feedback" role="status"></p></section>';
+identityPanel.innerHTML='<span class="pill" data-i18n="temporaryIdentity"></span><p id="identity-key" class="identity-key"></p><form id="global-name-form"><label for="global-name" data-i18n="globalName"></label><input id="global-name" maxlength="24" autocomplete="off"/><p class="scope-hint" data-i18n="globalNameHint"></p><button class="primary" data-i18n="saveName"></button><p id="identity-feedback" role="status"></p></form><section id="recovery-file-tools" class="recovery-file-tools" hidden><p class="recovery-warning" data-i18n="recoveryFileSafety"></p><button id="download-recovery-file" type="button" data-i18n="recoveryFileDownload"></button><p id="recovery-file-feedback" role="status"></p><hr/><p class="scope-hint" data-i18n="forgetLoginHint"></p><button id="forget-login" type="button" class="danger" data-i18n="forgetLogin"></button></section>';
 identityPanel.append(document.querySelector('.session-banner')!);
 const preferences=document.createElement('details');preferences.className='preferences';preferences.innerHTML='<summary data-i18n="preferences"></summary>';
 for(const id of ['skin','language']){const label=document.createElement('label');label.htmlFor=id;label.dataset.i18n=id;preferences.append(label,$(id));}
@@ -382,6 +382,11 @@ $('clear-session').addEventListener('click',async()=>{
 });
 $('logout').addEventListener('click',async()=>{
  if(!confirm(t('logoutConfirm')))return;closePanels();await disconnect();await logoutPersistent();
+ try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
+ location.reload();
+});
+$('forget-login').addEventListener('click',async()=>{
+ if(!confirm(t('forgetLoginConfirm')))return;closePanels();await disconnect();await logoutPersistent();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });

@@ -36,6 +36,9 @@ async function installRoutes(page){
   if(url.pathname==='/xrpc/com.atproto.server.getSession'){
    await route.fulfill({headers:cors,body:JSON.stringify({handle:'alice.test',did,active:true})});return;
   }
+  if(url.pathname==='/xrpc/com.atproto.server.deleteSession'){
+   await route.fulfill({headers:cors,body:'{}'});return;
+  }
   if(url.pathname==='/xrpc/com.atproto.repo.getRecord'){
    const collection=url.searchParams.get('collection'),rkey=url.searchParams.get('rkey'),value=records.get(recordKey(collection,rkey));
    if(!value){await route.fulfill({status:400,headers:cors,body:JSON.stringify({error:'RecordNotFound',message:'Record not found'})});return;}
@@ -93,7 +96,7 @@ try{
 
  await second.waitForFunction(()=>JSON.parse(sessionStorage.getItem('soft-room/session/v1')).name==='Remote Name',undefined,{timeout:8_000});const refreshesBefore=requests.filter(value=>value.includes('/xrpc/com.atproto.server.refreshSession')).length;
  await second.evaluate(()=>sessionStorage.removeItem('soft-room/persistent-active/v1'));await second.reload();await second.getByRole('button',{name:'Continue as alice.test'}).click();await second.locator('#my-identity').waitFor();const refreshedSession=JSON.parse(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.equal(refreshedSession.name,'Remote Name');assert(requests.filter(value=>value.includes('/xrpc/com.atproto.server.refreshSession')).length>refreshesBefore);
- second.once('dialog',dialog=>dialog.accept());await second.getByRole('button',{name:'Log out',exact:true}).click();await second.getByRole('heading',{name:'Choose your identity'}).waitFor();assert.equal(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')),null);await second.getByRole('button',{name:'Continue as alice.test'}).click();await second.getByText(/needs one new Bluesky sign-in/).waitFor();
+ await second.locator('#my-identity').click();second.once('dialog',dialog=>dialog.accept());await second.getByRole('button',{name:'Delete login information'}).click();await second.getByRole('heading',{name:'Choose your identity'}).waitFor();assert.equal(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')),null);assert.equal(await second.evaluate(()=>localStorage.getItem('soft-room/persistent-identities/v1')),'[]');assert.equal(await second.getByRole('button',{name:'Continue as alice.test'}).count(),0);assert.equal(await second.evaluate(async id=>new Promise(resolve=>{const open=indexedDB.open('soft-room-private-v1');open.onsuccess=()=>{const get=open.result.transaction('keys').objectStore('keys').get(`account-session:${id}`);get.onsuccess=()=>resolve(get.result);};}),did),undefined);assert(requests.some(value=>value.includes('/xrpc/com.atproto.server.deleteSession')));
 
  const thirdContext=await browser.newContext({locale:'en-US'}),third=await thirdContext.newPage();await installRoutes(third);await openForm(third,false);await third.getByRole('button',{name:'Sign in and restore'}).click();await third.getByRole('alert').filter({hasText:/current identity is still temporary/}).waitFor();
  const thirdSession=JSON.parse(await third.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.equal(thirdSession.name,'alice.test');assert.notEqual(thirdSession.secret,firstSession.secret);assert.equal(await third.evaluate(()=>sessionStorage.getItem('soft-room/persistent-active/v1')),null);assert.equal(await third.evaluate(()=>sessionStorage.getItem('soft-room/persistent-recovery-pending/v1')),'1');
