@@ -23,7 +23,7 @@ import {effectiveName,type ChatEntry} from './names.ts';
 import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, openHistory, type Room, type Message } from './protocol.ts';
 import { computeReadKey, computeWork, type WorkProgress } from './pow.ts';
 import { loadSession, saveSession, freshSession, encodeSession, decodeSession, SESSION_KEY, type SavedRoom } from './session.ts';
-import {activeProfile,deleteSavedRoom,exportRecoveryFile,isPersistent,logoutPersistent,persistSessionState,recoveryPending} from './persistent/runtime.ts';
+import {activeProfile,deleteSavedRoom,exportRecoveryFile,isPersistent,logoutPersistent,persistSessionState,recoveryPending,refreshPersistentIdentity} from './persistent/runtime.ts';
 import {saveNativeFileDetailed} from './native-files.ts';
 import { translate, type TextKey, type Language } from './i18n.ts';
 import {observeMember,online,HEARTBEAT_INTERVAL,type Member} from './members.ts';
@@ -53,6 +53,8 @@ let writeController:AbortController|undefined,writeBusy=false,writePaused=false;
 let progress:WorkProgress={attempts:0,elapsed:0};
 let persistentTimer=0,persistentFlight=Promise.resolve();
 const save=()=>{cacheFailed=!saveSession(storage,session);renderCache();if(isPersistent()){window.clearTimeout(persistentTimer);persistentTimer=window.setTimeout(()=>{const snapshot=decodeSession(encodeSession(session));persistentFlight=persistentFlight.then(()=>persistSessionState(snapshot)).catch(()=>{});},250);}};
+let identityRefresh:Promise<void>|undefined;
+function refreshAccountIdentity(){if(!isPersistent()||identityRefresh)return;identityRefresh=(async()=>{try{await persistentFlight;const restored=await refreshPersistentIdentity();if(!restored||restored.identity.publicKey!==session.identity.publicKey||restored.username===session.name)return;if(restored.username)session.name=restored.username;else delete session.name;cacheFailed=!saveSession(storage,session);languageChanged();}catch{ /* Keep the last local username while the PDS is unavailable. */ }finally{identityRefresh=undefined;}})();}
 $('app').innerHTML=`<div class="shell">
 <header class="top"><a class="brand" href="/" data-label="home"><span class="mark"><span class="soft-monogram">s<span>r</span></span><img class="sssp-emblem" src="/sssp-emblem.svg" alt=""/></span><span>soft room<small data-i18n="tagline"></small></span></a><div class="top-tools"><div class="identity"><span class="avatar">✳</span><span><small data-i18n="temporaryIdentity"></small><b id="identity"></b></span></div><label class="sr-only" for="skin" data-i18n="skin"></label><select id="skin"><option value="soft" data-i18n="skinSoft"></option><option value="sssp" data-i18n="skinSssp"></option><option value="kabutack" data-i18n="skinKabutack"></option></select><label class="sr-only" for="language" data-i18n="language"></label><select id="language"><option value="zh">中文</option><option value="en">English</option></select></div></header>
 <section class="session-banner"><div><strong id="cache-warning"></strong><p data-i18n="sessionDetail"></p></div><button id="clear-session" data-i18n="clearSession"></button></section>
@@ -372,12 +374,12 @@ $('reconnect').addEventListener('click',()=>{if(active)void enter(active);});
 $('copy').addEventListener('click',()=>{if(active)void copyInvitation(active.room);});
 $('clear-session').addEventListener('click',async()=>{
  if(!confirm(t('clearConfirm')))return;closePanels();await disconnect();
- logoutPersistent();
+ await logoutPersistent();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Save below reports storage failure. */ }
  const theme=session.theme;session=freshSession(session.language);session.theme=theme;histories.clear();seenIds.clear();membersByRoom.clear();channelMemory.clear();save();languageChanged();notice('sessionCleared');
 });
 $('logout').addEventListener('click',async()=>{
- if(!confirm(t('logoutConfirm')))return;closePanels();await disconnect();logoutPersistent();
+ if(!confirm(t('logoutConfirm')))return;closePanels();await disconnect();await logoutPersistent();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });
@@ -400,8 +402,8 @@ function checkDay(){
  else if(!writeBusy&&statusKey!=='connected'){statusKey='connected';controls();renderRooms();}
 }
 setInterval(()=>{mesh?.tick();meshPanel.render();checkDay();void sendHeartbeat();if($<HTMLDialogElement>('members-dialog').open)renderMembers();},1000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){mesh?.tick();checkDay();void sendHeartbeat();}});
-window.addEventListener('focus',checkDay);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){mesh?.tick();checkDay();void sendHeartbeat();refreshAccountIdentity();}});
+window.addEventListener('focus',()=>{checkDay();refreshAccountIdentity();});
 languageChanged();save();keepMobileScreenOn();
 if(location.hash){const code=location.hash.slice(1);history.replaceState(null,'',location.pathname);try{const room=parseInvite(code);$<HTMLTextAreaElement>('invite-input').value=code;openNew();$('choose-join').click();$('form-feedback').textContent=room.name;}catch{notice('inviteInvalid');}}
 else if(session.activeId){const saved=session.rooms.find(item=>roomId(item.room)===session.activeId);if(saved)void enter(saved);}

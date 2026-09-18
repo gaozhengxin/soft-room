@@ -1,6 +1,7 @@
 import {freshSession,type Session} from '../session.ts';
 import {normalizeNickname} from '../protocol.ts';
-import {signInAccount,type AccountLogin,type SignedInAccount} from './atproto-account.ts';
+import type {AtpSessionData} from '@atproto/api';
+import {resumeAccount,signInAccount,type AccountLogin,type SignedInAccount} from './atproto-account.ts';
 import {IndexedDbMasterKeys,IndexedDbRecordStore,openPrivateDatabase} from './indexed-db.ts';
 import {IDENTITY_COLLECTION,IDENTITY_RKEY,PortableStateRepository,ROOM_COLLECTION,type RecordStore,type StoredRecord} from './portable-state.ts';
 import {createRecoveryBundle,parseRecoveryFile,recoveryFile,recoverMasterKey} from './recovery.ts';
@@ -21,6 +22,7 @@ function temporaryLogin(session:Session,handle:string):PersistentLoginResult{cho
 function defaultUsername(handle:string){try{return normalizeNickname(handle.trim().slice(0,24));}catch{return '';}}
 async function accountSession(repository:PortableStateRepository,session:Session,handle:string){if(session.name)return session;session.name=defaultUsername(handle);if(session.name)await repository.saveIdentity(session.identity,session.name);return session;}
 async function localRepository(profile:PersistentProfile){const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),local=new IndexedDbRecordStore(db,profile.id),key=await keys.get(profile.id);return {keys,local,key};}
+function sessionWriter(keys:IndexedDbMasterKeys,id:string,key:CryptoKey){let flight=Promise.resolve();return (value:AtpSessionData|undefined)=>{flight=flight.then(()=>value?keys.putAccountSession(id,key,value):keys.deleteAccountSession(id)).catch(()=>{});return flight;};}
 
 class StagingStore implements RecordStore {
  records=new Map<string,StoredRecord>();
@@ -40,39 +42,45 @@ async function installRecovery(account:SignedInAccount,session:Session,keys:Inde
 }
 function activate(profile:PersistentProfile,repository:PortableStateRepository){const known=profiles().filter(item=>item.id!==profile.id);known.unshift(profile);saveProfiles(known);current={profile,repository};try{sessionStorage.setItem(ACTIVE,profile.id);sessionStorage.removeItem(RECOVERY_PENDING);}catch{}}
 
-export async function continuePersistent(profile:PersistentProfile,language:'zh'|'en'){const {local,key}=await localRepository(profile);if(!key)throw Error('Recovery key required');const repository=new PortableStateRepository(key,local);const restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');activate(profile,repository);return restored;}
+export async function continuePersistent(profile:PersistentProfile,language:'zh'|'en'){
+ const {keys,local,key}=await localRepository(profile);if(!key)throw Error('Recovery key required');const repository=new PortableStateRepository(key,local),savedAccount=await keys.getAccountSession(profile.id,key);
+ let resolvedProfile=profile;if(savedAccount)try{const write=sessionWriter(keys,profile.id,key),account=await resumeAccount(profile.pds,savedAccount,write);repository.setRemote(account.records);if(account.session.session)await write(account.session.session);await repository.pull();resolvedProfile={...profile,label:account.handle};}catch{repository.setRemote(undefined);}
+ const restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');activate(resolvedProfile,repository);return restored;
+}
 
 export async function loginPersistent(input:PersistentAccountLogin,language:'zh'|'en',create:boolean,initial?:Session):Promise<PersistentLoginResult>{
- const account=await signInAccount(input),id=profileId(account.did),profile={id,label:account.handle,pds:account.pds};
+ let writeAccount:((value:AtpSessionData|undefined)=>Promise<void>)|undefined;const account=await signInAccount(input,value=>void writeAccount?.(value)),id=profileId(account.did),profile={id,label:account.handle,pds:account.pds};
  const {keys,local,key:storedKey}=await localRepository(profile),remoteIdentity=await account.records.get(IDENTITY_COLLECTION,IDENTITY_RKEY);let remoteRecovery=await account.recovery.get();
+ const activateAccount=async(key:CryptoKey,repository:PortableStateRepository)=>{writeAccount=sessionWriter(keys,id,key);if(account.session.session)await writeAccount(account.session.session);activate(profile,repository);};
  if(create&&remoteIdentity)throw Error('Persistent identity already exists');
 
  if(!storedKey){
   if(remoteIdentity){
    if(!input.recoveryFile?.trim())return temporaryLogin(initial||freshSession(language),account.handle);
    if(!remoteRecovery)throw Error('Recovery not enabled');
-   const recovered=parseRecoveryFile(input.recoveryFile,account.did),key=await recoverMasterKey(account.did,recovered.recoveryCode,remoteRecovery),repository=new PortableStateRepository(key,local,account.records);await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');await keys.put(id,key);await keys.putRecovery(id,recovered.recoveryCode,remoteRecovery);restored=await accountSession(repository,restored,account.handle);activate(profile,repository);return {session:restored};
+   const recovered=parseRecoveryFile(input.recoveryFile,account.did),key=await recoverMasterKey(account.did,recovered.recoveryCode,remoteRecovery),repository=new PortableStateRepository(key,local,account.records);await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');await keys.put(id,key);await keys.putRecovery(id,recovered.recoveryCode,remoteRecovery);restored=await accountSession(repository,restored,account.handle);await activateAccount(key,repository);return {session:restored};
   }
   if(!create)throw Error('No persistent identity exists for this account');
-  const session=initial||freshSession(language);session.name ||= defaultUsername(account.handle);const installed=await installRecovery(account,session,keys,local,id);activate(profile,installed.repository);return {session,recoveryFile:recoveryFile(account.did,installed.code)};
+  const session=initial||freshSession(language);session.name ||= defaultUsername(account.handle);const installed=await installRecovery(account,session,keys,local,id),key=await keys.get(id);if(!key)throw Error('Persistent identity unavailable');await activateAccount(key,installed.repository);return {session,recoveryFile:recoveryFile(account.did,installed.code)};
  }
 
  let repository=new PortableStateRepository(storedKey,local,account.records);
  if(!remoteIdentity){
   if(!create)throw Error('No persistent identity exists for this account');
-  const session=await repository.restore(language)||initial||freshSession(language);session.name ||= defaultUsername(account.handle);const installed=await installRecovery(account,session,keys,local,id);activate(profile,installed.repository);return {session,recoveryFile:recoveryFile(account.did,installed.code)};
+  const session=await repository.restore(language)||initial||freshSession(language);session.name ||= defaultUsername(account.handle);const installed=await installRecovery(account,session,keys,local,id),key=await keys.get(id);if(!key)throw Error('Persistent identity unavailable');await activateAccount(key,installed.repository);return {session,recoveryFile:recoveryFile(account.did,installed.code)};
  }
 
  if(!remoteRecovery){
   const savedRecord=await keys.getRecoveryRecord(id),savedCode=await keys.getRecoveryCode(id);
-  if(savedRecord&&savedCode){await account.recovery.put(savedRecord);remoteRecovery=savedRecord;await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);activate(profile,repository);return {session:restored,recoveryFile:recoveryFile(account.did,savedCode)};}
-  let restored=await repository.restore(language);if(!restored){await repository.pull();restored=await repository.restore(language);}if(!restored)throw Error('Persistent identity unavailable');restored.name ||= defaultUsername(account.handle);const installed=await installRecovery(account,restored,keys,local,id);activate(profile,installed.repository);return {session:restored,recoveryFile:recoveryFile(account.did,installed.code)};
+  if(savedRecord&&savedCode){await account.recovery.put(savedRecord);remoteRecovery=savedRecord;await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);await activateAccount(storedKey,repository);return {session:restored,recoveryFile:recoveryFile(account.did,savedCode)};}
+  let restored=await repository.restore(language);if(!restored){await repository.pull();restored=await repository.restore(language);}if(!restored)throw Error('Persistent identity unavailable');restored.name ||= defaultUsername(account.handle);const installed=await installRecovery(account,restored,keys,local,id),key=await keys.get(id);if(!key)throw Error('Persistent identity unavailable');await activateAccount(key,installed.repository);return {session:restored,recoveryFile:recoveryFile(account.did,installed.code)};
  }
 
- await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);activate(profile,repository);return {session:restored};
+ await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);await activateAccount(storedKey,repository);return {session:restored};
 }
 export async function persistSessionState(session:Session){if(!current)return;await current.repository.saveIdentity(session.identity,session.name);for(const saved of session.rooms)await current.repository.saveRoom(saved);}
+export async function refreshPersistentIdentity(){if(!current)return;await current.repository.pull();return current.repository.loadIdentityState();}
 export async function deleteSavedRoom(id:string){await current?.repository.deleteRoom(id);}
 export async function exportRecoveryFile(){if(!current)return;const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),code=await keys.getRecoveryCode(current.profile.id);return code?recoveryFile(current.profile.id,code):undefined;}
-export function logoutPersistent(){chooseTemporary();}
+export async function logoutPersistent(){const id=current?.profile.id||activeProfileId();chooseTemporary();if(id)try{const db=await openPrivateDatabase();await new IndexedDbMasterKeys(db).deleteAccountSession(id);}catch{}}
 export function isPersistent(){return !!current;}

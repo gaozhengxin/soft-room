@@ -26,3 +26,8 @@ export async function signInAccount(input:AccountLogin,persist?:(session:AtpSess
  if(!session.session)throw Error('Sign in failed');const agent=new Agent(session),{did,handle}=session.session;
  return {did,handle,pds,session,records:new AtProtoRecordStore(agent,did),recovery:new AtProtoRecoveryStore(agent,did)};
 }
+export async function resumeAccount(pds:string,saved:AtpSessionData,persist?:(session:AtpSessionData|undefined)=>void):Promise<SignedInAccount>{
+ const {Agent,CredentialSession}=await import('@atproto/api'),service=normalizePds(pds),session=new CredentialSession(new URL(service),fetch,(_event,value)=>persist?.(value));
+ await session.resumeSession(saved);if(!session.session)throw Error('Account session expired');const agent=new Agent(session),{did,handle}=session.session;if(did!==saved.did)throw Error('Account session mismatch');
+ return {did,handle,pds:service,session,records:new AtProtoRecordStore(agent,did),recovery:new AtProtoRecoveryStore(agent,did)};
+}

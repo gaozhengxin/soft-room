@@ -1,7 +1,9 @@
-import type {EncryptedRecord,RecordStore,StoredRecord} from './portable-state.ts';
+import type {AtpSessionData} from '@atproto/api';
+import {decryptState,encryptState,type EncryptedRecord,type RecordStore,type StoredRecord} from './portable-state.ts';
 import type {RecoveryRecord} from './recovery.ts';
 
 const DB='soft-room-private-v1',VERSION=1,KEYS='keys',RECORDS='records';
+const ACCOUNT_SESSION_COLLECTION='uk.wakukusmartrecipe.soft.account-session';
 const request=<T>(value:IDBRequest<T>)=>new Promise<T>((resolve,reject)=>{value.onsuccess=()=>resolve(value.result);value.onerror=()=>reject(value.error||Error('IndexedDB request failed'));});
 export async function openPrivateDatabase():Promise<IDBDatabase>{return new Promise((resolve,reject)=>{const req=indexedDB.open(DB,VERSION);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(KEYS))db.createObjectStore(KEYS);if(!db.objectStoreNames.contains(RECORDS))db.createObjectStore(RECORDS);};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||Error('Private storage unavailable'));});}
 const done=(tx:IDBTransaction)=>new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error||Error('Private storage failed'));tx.onabort=()=>reject(tx.error||Error('Private storage aborted'));});
@@ -12,6 +14,9 @@ export class IndexedDbMasterKeys {
  async getRecoveryCode(profileId:string){return request(this.db.transaction(KEYS).objectStore(KEYS).get(`recovery-code:${profileId}`)) as Promise<string|undefined>;}
  async getRecoveryRecord(profileId:string){return request(this.db.transaction(KEYS).objectStore(KEYS).get(`recovery-record:${profileId}`)) as Promise<RecoveryRecord|undefined>;}
  async putRecovery(profileId:string,code:string,record:RecoveryRecord){const tx=this.db.transaction(KEYS,'readwrite'),store=tx.objectStore(KEYS);store.put(code,`recovery-code:${profileId}`);store.put(record,`recovery-record:${profileId}`);await done(tx);}
+ async getAccountSession(profileId:string,key:CryptoKey){const record=await request(this.db.transaction(KEYS).objectStore(KEYS).get(`account-session:${profileId}`)) as EncryptedRecord|undefined;if(!record)return;const value=await decryptState<AtpSessionData>(key,ACCOUNT_SESSION_COLLECTION,profileId,record);if(value.did!==profileId||typeof value.handle!=='string'||typeof value.accessJwt!=='string'||typeof value.refreshJwt!=='string')throw Error('Invalid account session');return value;}
+ async putAccountSession(profileId:string,key:CryptoKey,value:AtpSessionData){if(value.did!==profileId)throw Error('Invalid account session');const record=await encryptState(key,ACCOUNT_SESSION_COLLECTION,profileId,value),tx=this.db.transaction(KEYS,'readwrite');tx.objectStore(KEYS).put(record,`account-session:${profileId}`);await done(tx);}
+ async deleteAccountSession(profileId:string){const tx=this.db.transaction(KEYS,'readwrite');tx.objectStore(KEYS).delete(`account-session:${profileId}`);await done(tx);}
 }
 export class IndexedDbRecordStore implements RecordStore {
  constructor(private db:IDBDatabase,private profileId:string){}
