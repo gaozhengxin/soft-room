@@ -75,14 +75,23 @@ jobs:
           apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
           test -n "$apksigner"
           "$apksigner" verify --verbose --print-certs "$apk"
-          grep -R -q 'releases/latest/download/Soft-Room-android.apk' android/app/src/main/assets/public/assets
+          grep -R -q 'releases/latest/download/android-update.json' android/app/src/main/assets/public/assets
           mkdir -p artifacts
+          version=$(node -p 'require("./package.json").version')
+          version_code=$(node -e 'const [a,b,c]=require("./package.json").version.split(".").map(Number); process.stdout.write(String(a*1000000+b*1000+c))')
+          unique="Soft-Room-android-${version}.apk"
           cp "$apk" artifacts/Soft-Room-android.apk
+          cp "$apk" "artifacts/$unique"
           (cd artifacts && sha256sum Soft-Room-android.apk > Soft-Room-android.apk.sha256)
+          (cd artifacts && sha256sum "$unique" > "${unique}.sha256")
+          digest=$(sha256sum "artifacts/$unique" | cut -d ' ' -f 1)
+          VERSION="$version" BUILD="$version_code" APK_NAME="$unique" APK_SHA256="$digest" node -e 'const fs=require("fs"); const value={channel:"stable",build:Number(process.env.BUILD),version:process.env.VERSION,apkUrl:`https://github.com/gaozhengxin/soft-room/releases/download/v${process.env.VERSION}/${process.env.APK_NAME}`,sha256:process.env.APK_SHA256,publishedAt:new Date().toISOString()}; fs.writeFileSync("artifacts/android-update.json",JSON.stringify(value,null,2)+"\n")'
       - uses: actions/upload-artifact@v4
         with:
           name: Soft-Room-release-${{ github.run_id }}-android
-          path: artifacts/Soft-Room-android.apk*
+          path: |
+            artifacts/Soft-Room-android*.apk*
+            artifacts/android-update.json
           if-no-files-found: error
           retention-days: 7
 
@@ -102,6 +111,8 @@ jobs:
       - name: Verify release files
         run: |
           (cd artifacts && sha256sum -c Soft-Room-android.apk.sha256)
+          version=$(node -p 'require("./package.json").version')
+          (cd artifacts && sha256sum -c "Soft-Room-android-${version}.apk.sha256")
           (cd artifacts && sha256sum -c Soft-Room-unsigned.ipa.sha256)
       - name: Publish release
         env:
@@ -112,6 +123,9 @@ jobs:
             artifacts/Soft-Room-unsigned.ipa.sha256 \
             artifacts/Soft-Room-android.apk \
             artifacts/Soft-Room-android.apk.sha256 \
+            "artifacts/Soft-Room-android-${GITHUB_REF_NAME#v}.apk" \
+            "artifacts/Soft-Room-android-${GITHUB_REF_NAME#v}.apk.sha256" \
+            artifacts/android-update.json \
             --verify-tag \
             --title "Soft Room $GITHUB_REF_NAME" \
             --notes-file .github/release-notes.md

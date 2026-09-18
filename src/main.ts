@@ -13,6 +13,7 @@ import settingsIcon from './icons/settings.svg?raw';
 import downloadIcon from './icons/download.svg?raw';
 import paperclipIcon from './icons/paperclip.svg?raw';
 import closeIcon from './icons/x.svg?raw';
+import {hasAndroidUpdate,latestAndroidUpdate,type AndroidUpdateManifest} from './android-update.ts';
 import './style.css';
 import './sssp.css';
 import './layout.css';
@@ -119,7 +120,13 @@ sidebar.insertAdjacentHTML('beforeend',`<div class="sidebar-bottom"><p class="id
 const releaseLink='https://github.com/gaozhengxin/soft-room/releases/latest';
 const androidChannel=import.meta.env.VITE_ANDROID_CHANNEL==='test'?'test':'stable';
 const androidApkLink=androidChannel==='test'?'https://github.com/gaozhengxin/soft-room/releases/download/android-test/Soft-Room-android-test.apk':'https://github.com/gaozhengxin/soft-room/releases/latest/download/Soft-Room-android.apk';
-sidebar.querySelector('.sidebar-bottom')!.insertAdjacentHTML('afterbegin',`<div class="release-links"><a class="release-link desktop-download" href="${releaseLink}" target="_blank" rel="noopener noreferrer" data-label="releases">${downloadIcon}<span data-i18n="releases"></span></a><a class="release-link desktop-download" href="${androidApkLink}" target="_blank" rel="noopener noreferrer" data-label="androidDownload">${downloadIcon}<span data-i18n="androidDownload"></span></a><a class="release-link mobile-download mobile-ios-download" href="${releaseLink}" target="_blank" rel="noopener noreferrer" data-label="downloadUpdate">${downloadIcon}<span data-i18n="downloadUpdate"></span></a><a class="release-link mobile-download mobile-android-download" href="${androidApkLink}" target="_blank" rel="noopener noreferrer" data-label="downloadUpdate">${downloadIcon}<span data-i18n="downloadUpdate"></span></a></div>`);
+sidebar.querySelector('.sidebar-bottom')!.insertAdjacentHTML('afterbegin',`<div class="release-links"><a class="release-link desktop-download" href="${releaseLink}" target="_blank" rel="noopener noreferrer" data-label="releases">${downloadIcon}<span data-i18n="releases"></span></a><a class="release-link desktop-download" href="${androidApkLink}" target="_blank" rel="noopener noreferrer" data-label="androidDownload">${downloadIcon}<span data-i18n="androidDownload"></span></a><a class="release-link mobile-download mobile-ios-download" href="${releaseLink}" target="_blank" rel="noopener noreferrer" data-label="downloadUpdate">${downloadIcon}<span data-i18n="downloadUpdate"></span></a><a id="android-update" class="release-link mobile-download mobile-android-download" target="_blank" rel="noopener noreferrer" data-label="downloadUpdate">${downloadIcon}<span data-i18n="downloadUpdate"></span></a></div>`);
+const androidUpdateLink=$<HTMLAnchorElement>('android-update'),currentAndroidBuild=Number(import.meta.env.VITE_ANDROID_BUILD_ID||0);
+let androidUpdateState:'idle'|'checking'|'available'|'current'|'error'='idle',androidUpdate:AndroidUpdateManifest|undefined;
+function renderAndroidUpdate(){const label=androidUpdateLink.querySelector('span')!;label.textContent=androidUpdateState==='checking'?t('updateChecking'):androidUpdateState==='available'&&androidUpdate?t('updateAvailable',{version:androidUpdate.version}):androidUpdateState==='current'?t('updateCurrent'):androidUpdateState==='error'?t('updateRetry'):t('downloadUpdate');androidUpdateLink.setAttribute('aria-label',label.textContent);androidUpdateLink.classList.toggle('is-current',androidUpdateState==='current');}
+async function checkAndroidUpdate(){androidUpdateState='checking';androidUpdate=undefined;androidUpdateLink.removeAttribute('href');renderAndroidUpdate();try{const manifest=await latestAndroidUpdate(androidChannel);androidUpdate=manifest;if(hasAndroidUpdate(currentAndroidBuild,manifest)){androidUpdateState='available';androidUpdateLink.href=manifest.apkUrl;}else androidUpdateState='current';}catch{androidUpdateState='error';}renderAndroidUpdate();}
+androidUpdateLink.onclick=event=>{if(androidUpdateState==='available'&&androidUpdateLink.href)return;event.preventDefault();void checkAndroidUpdate();};
+if(document.documentElement.dataset.runtime==='app'&&document.documentElement.dataset.platform==='android')void checkAndroidUpdate();
 document.querySelector('.top')!.remove();document.querySelector('footer')!.remove();
 const head=document.querySelector('.chat-head')!;
 head.insertAdjacentHTML('afterbegin','<button id="sidebar-toggle" class="icon-button" data-label="myRooms" aria-controls="room-sidebar" aria-expanded="true">☰</button>');sidebar.id='room-sidebar';
@@ -280,7 +287,7 @@ function languageChanged(){
  document.documentElement.lang=session.language==='zh'?'zh-CN':'en';document.title=session.language==='zh'?'Soft Room · 随便聊聊':'Soft Room · Just chatting';
  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n as TextKey));
  for(const [data,attr] of [['placeholder','placeholder'],['label','aria-label'],['title','title']] as const)document.querySelectorAll<HTMLElement>(`[data-${data}]`).forEach(el=>el.setAttribute(attr,t(el.dataset[data] as TextKey)));
- if(session.theme==='sssp')document.querySelector('[data-i18n="tagline"]')!.textContent=t('patrolTagline');
+ if(session.theme==='sssp')document.querySelector('[data-i18n="tagline"]')!.textContent=t('patrolTagline');renderAndroidUpdate();
  $<HTMLSelectElement>('skin').value=session.theme||'soft';
  $<HTMLSelectElement>('language').value=session.language;renderCache();controls();renderRooms();renderMessages();renderNotice();renderMembers();meshPanel.render();
 }
