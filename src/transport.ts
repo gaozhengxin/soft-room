@@ -1,8 +1,8 @@
 import {createLightNode} from '@waku/sdk';
 import {FilterCore,FilterCodecs,LightPushCore} from '@waku/core';
-import {activeBootstrapPeers} from './gateways.ts';
+import {activeBootstrap} from './gateways.ts';
 import {regionBypassed} from './region-bypass.ts';
-import {pushViaWakuStore} from './storage.ts';
+import {pollWakuStore,pushViaWakuStore} from './storage.ts';
 import {GatewayHealth,firstAcknowledged} from './gateway-health.ts';
 import {roomId,topic,type Room} from './protocol.ts';
 export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signal?:AbortSignal){
@@ -19,14 +19,16 @@ export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signa
   let timer:ReturnType<typeof setTimeout>|undefined;
   try{return await Promise.race([operation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('Gateway timeout')),ms);})]);}finally{clearTimeout(timer);}
  };
- let node:Awaited<ReturnType<typeof createLightNode>>|undefined,filter:FilterCore|undefined,timer:ReturnType<typeof setInterval>|undefined;
+ let node:Awaited<ReturnType<typeof createLightNode>>|undefined,filter:FilterCore|undefined,timer:ReturnType<typeof setInterval>|undefined,restTimer:ReturnType<typeof setInterval>|undefined,restLast=0,restRunning=false;
  let stopPromise:Promise<void>|undefined;
- const stop=()=>{if(stopPromise)return stopPromise;stopped=true;health.clear();clearInterval(timer);lifetime.abort();signal?.removeEventListener('abort',onAbort);window.removeEventListener('online',onOnline);return stopPromise=(async()=>{await filter?.stop();await node?.stop();})().catch(()=>{});};
+ const stop=()=>{if(stopPromise)return stopPromise;stopped=true;health.clear();clearInterval(timer);clearInterval(restTimer);lifetime.abort();signal?.removeEventListener('abort',onAbort);window.removeEventListener('online',onOnline);return stopPromise=(async()=>{await filter?.stop();await node?.stop();})().catch(()=>{});};
  const onAbort=()=>{void stop();};
  const onOnline=()=>{health.clear();};
  if(signal?.aborted)throw abortError();signal?.addEventListener('abort',onAbort,{once:true});
  try{
-  node=await createLightNode({defaultBootstrap:true,bootstrapPeers:activeBootstrapPeers(),numPeersToUse:1,connectionManager:{maxBootstrapPeers:6,maxConnections:10},libp2p:{hideWebSocketInfo:true}});
+  const bootstrap=activeBootstrap();
+  const privateMode=!bootstrap.defaultBootstrap;
+  node=await createLightNode({defaultBootstrap:bootstrap.defaultBootstrap,bootstrapPeers:bootstrap.peers,numPeersToUse:1,connectionManager:{maxBootstrapPeers:bootstrap.peers.length,maxConnections:10},libp2p:{hideWebSocketInfo:true}});
   if(stopped){await node.stop();throw abortError();}
   const current=node,decoder=current.createDecoder({contentTopic:topic(room)}),encoder=current.createEncoder({contentTopic:topic(room),ephemeral:true}),archiveEncoder=current.createEncoder({contentTopic:topic(room),ephemeral:false});
   // Own Filter acknowledgements explicitly; repeated SDK subscribe() can return a cached success.
@@ -59,7 +61,9 @@ export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signa
    }finally{scanning=false;}
   }
   window.addEventListener('online',onOnline);timer=setInterval(()=>{void scan().catch(()=>{});},1000);
-  const connected=()=>!stopped&&health.available(live()).length>0;
+  const poll=async()=>{if(!privateMode||stopped||restRunning)return;restRunning=true;try{await bounded(pollWakuStore(roomId(room),payloads=>payloads.forEach(receive),lifetime.signal),10000);restLast=Date.now();}catch{ /* A later poll or direct Filter connection may recover. */ }finally{restRunning=false;}};
+  if(privateMode){await poll();restTimer=setInterval(()=>{void poll();},2500);}
+  const connected=()=>!stopped&&(health.available(live()).length>0||(privateMode&&Date.now()-restLast<10000));
   const deadline=Date.now()+55000;
   while(!stopped&&!connected()&&Date.now()<deadline){await scan();await pause(250);}
   if(!connected())throw Error('Waku connection failed');

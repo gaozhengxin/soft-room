@@ -12,4 +12,7 @@ export const bootstrapPeers=[
 ];
 
 export const privateWakuPeer='/dns4/waku.wakukusmartrecipe.uk/tcp/443/wss/p2p/16Uiu2HAm6hZ56yhEYhPNdA1vwSf5CTXtxEyHXuS86xfKYovTvNEv';
-export function activeBootstrapPeers(){return regionBypassed()?[privateWakuPeer,...bootstrapPeers]:bootstrapPeers;}
+export function activeBootstrap(){
+  const privateMode=regionBypassed();
+  return {defaultBootstrap:!privateMode,peers:privateMode?[privateWakuPeer]:bootstrapPeers};
+}

@@ -18,7 +18,7 @@ try{
  }
  const room=await pages[0].evaluate(async()=>{const lib=await import('/gateway-harness.js');return lib.makeRoom('Single gateway test',false);});
  await Promise.all(pages.map(page=>page.evaluate(async room=>{const lib=await import('/gateway-harness.js');window.received=[];window.transport=await lib.connect(room,payload=>window.received.push(new TextDecoder().decode(payload)));},room)));
- assert.ok(blocked>0);console.log('ONLY_ONE_GATEWAY_AVAILABLE',host);
+ if(bypassDigest)assert.equal(blocked,0);else assert.ok(blocked>0);console.log('ONLY_ONE_GATEWAY_AVAILABLE',host);
  for(let i=0;i<2;i++){await pages[i].evaluate(async i=>window.transport.send(new TextEncoder().encode('message-'+i)),i);await pages[1-i].waitForFunction(i=>window.received.includes('message-'+i),i,{timeout:30000});}
  assert.ok(await pages[0].evaluate(()=>window.transport.connected()));
  await Promise.all(pages.map(p=>p.evaluate(()=>window.transport.stop())));console.log('PASS: other gateways blocked; one gateway provides bidirectional room messages');

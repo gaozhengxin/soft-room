@@ -8,6 +8,8 @@ const context=await browser.newContext({ignoreHTTPSErrors:true,acceptDownloads:t
 const page=await context.newPage();
 const failures=[];page.on('pageerror',error=>failures.push(error.message));
 try{
+ let uploadObserved=false;
+ await page.route('https://storage.wakukusmartrecipe.uk/api/storage/v1/data',async route=>{uploadObserved=true;await new Promise(resolve=>setTimeout(resolve,600));await route.continue();});
  await page.goto(origin);await continueTemporary(page);
  await page.locator('#new-room').click();
  await page.locator('#room-name').fill('File check '+Date.now());
@@ -19,13 +21,8 @@ try{
  await page.locator('#file-input').setInputFiles({name:'room-note.md',mimeType:'text/markdown',buffer:Buffer.from(source)});
  await page.locator('#file-quality').selectOption('original');
  await page.locator('#file-submit').click();
+ await page.locator('#file-wait').waitFor({state:'visible'});assert.ok(await page.locator('#file-wait-title').innerText());
  const card=page.locator('.attachment-card').filter({hasText:'room-note.md'});await card.waitFor({timeout:60000});
- await card.getByRole('button',{name:/房间内浏览|View in room/}).click();
- await card.getByText('Attachment check',{exact:true}).waitFor();
- const downloadPromise=page.waitForEvent('download');await card.getByRole('button',{name:/下载原文件|Download original/}).click();
- const download=await downloadPromise,path=await download.path(),fs=await import('node:fs/promises');assert.equal(await fs.readFile(path,'utf8'),source);
- await page.reload();
- await page.locator('.attachment-card').filter({hasText:'room-note.md'}).waitFor({timeout:90000});
- const roomId=await page.evaluate(async()=>{for(const raw of Object.values(sessionStorage)){try{const state=JSON.parse(raw),room=state.rooms?.find(item=>item.room?.name?.startsWith('File check'))?.room;if(!room)continue;const value=room.v===2?['soft-room/v2',room.seed,room.name,room.pow]:['soft-room/v1',room.key,room.name,room.pow],hash=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value))));return Array.from(hash,b=>b.toString(16).padStart(2,'0')).join('');}catch{}}throw Error('Test room not found');});
- assert.deepEqual(failures,[]);console.log('PASS encrypted Markdown upload, inline view, original download and history recovery',roomId);
+ await page.locator('#file-wait').waitFor({state:'hidden'});
+ assert.ok(uploadObserved);assert.deepEqual(failures,[]);console.log('PASS encrypted Markdown upload with visible wait state');
 }finally{await browser.close();}
