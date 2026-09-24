@@ -1,0 +1,53 @@
+services:
+  logos-node:
+    container_name: soft-room-logos-node
+    image: wakuorg/nwaku:v0.38.1
+    platform: linux/amd64
+    restart: unless-stopped
+    command:
+      - --cluster-id=0
+      - --num-shards-in-network=8
+      - --relay=true
+      - --rln-relay=false
+      - --lightpush=true
+      - --filter=true
+      - --store=true
+      - --store-message-db-url=sqlite:///data/store.sqlite3
+      - --store-message-retention-policy=time:604800
+      - --rest=true
+      - --rest-address=0.0.0.0
+      - --rest-port=8645
+      - --discv5-discovery=false
+    volumes:
+      - store-data:/data
+    networks: [soft-room-store]
+  manager:
+    container_name: soft-room-store-manager
+    build:
+      context: ..
+    restart: unless-stopped
+    depends_on:
+      logos-node:
+        condition: service_started
+    environment:
+      NODE_URL: http://logos-node:8645
+      STORE_DB: /data/store.sqlite3
+      FILE_ROOT: /files
+      NODE_PUBSUB_TOPIC: /waku/2/rs/0/7
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      MAINTENANCE_TOKEN: ${MAINTENANCE_TOKEN:-}
+    ports:
+      - "8788:8788"
+    volumes:
+      - store-data:/data
+      - file-data:/files
+    networks: [soft-room-store]
+
+networks:
+  soft-room-store:
+
+volumes:
+  store-data:
+    external: true
+    name: soft-room-store-check-data
+  file-data:
