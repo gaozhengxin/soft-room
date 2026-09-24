@@ -1,0 +1,94 @@
+apply plugin: 'com.android.application'
+
+def appVersion = new groovy.json.JsonSlurper().parse(file('../../package.json')).version
+def versionParts = appVersion.tokenize('.').collect { Integer.parseInt(it) }
+if (versionParts.size() != 3 || versionParts.any { it < 0 || it > 999 }) {
+    throw new GradleException('Android release version must be a three-part version with values below 1000')
+}
+def releaseKeystore = System.getenv('SOFT_ROOM_ANDROID_KEYSTORE')
+def releasePassword = System.getenv('SOFT_ROOM_ANDROID_STORE_PASSWORD')
+def betaBuildNumber = (System.getenv('SOFT_ROOM_ANDROID_BUILD_NUMBER') ?: '1') as Integer
+if (betaBuildNumber < 1 || betaBuildNumber > 9999) {
+    throw new GradleException('Android beta build number must be between 1 and 9999')
+}
+
+android {
+    namespace = "uk.wakukusmartrecipe.soft"
+    compileSdk = rootProject.ext.compileSdkVersion
+    flavorDimensions += "channel"
+    defaultConfig {
+        applicationId "uk.wakukusmartrecipe.soft"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode versionParts[0] * 1000000 + versionParts[1] * 1000 + versionParts[2]
+        versionName appVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    productFlavors {
+        stable {
+            dimension "channel"
+            resValue "string", "app_name", "Soft Room"
+            resValue "string", "title_activity_main", "Soft Room"
+        }
+        beta {
+            dimension "channel"
+            applicationIdSuffix ".beta"
+            versionCode defaultConfig.versionCode * 10000 + betaBuildNumber
+            versionName "${appVersion}-test.${betaBuildNumber}"
+            resValue "string", "app_name", "Soft Room 测试版"
+            resValue "string", "title_activity_main", "Soft Room 测试版"
+        }
+    }
+    signingConfigs {
+        release {
+            if (releaseKeystore && releasePassword) {
+                storeFile file(releaseKeystore)
+                storePassword releasePassword
+                keyAlias 'soft-room'
+                keyPassword releasePassword
+                storeType 'pkcs12'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (releaseKeystore && releasePassword) signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

@@ -1,0 +1,131 @@
+name: Release iOS and Android
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Check release version
+        if: github.event_name == 'push'
+        run: node -e 'const p=require("./package.json"); if(process.env.GITHUB_REF_NAME!==`v${p.version}`) process.exit(1)'
+      - run: npm ci
+      - run: npm run ios:ipa
+      - name: Verify unsigned IPA
+        run: |
+          unzip -tq artifacts/Soft-Room-unsigned.ipa
+          if unzip -Z1 artifacts/Soft-Room-unsigned.ipa | grep -q 'embedded.mobileprovision'; then
+            echo 'Refusing to release an IPA containing a provisioning profile.' >&2
+            exit 1
+          fi
+          (cd artifacts && shasum -a 256 -c Soft-Room-unsigned.ipa.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Soft-Room-release-${{ github.run_id }}-ios
+          path: artifacts/Soft-Room-unsigned.ipa*
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Check release version
+        if: github.event_name == 'push'
+        run: node -e 'const p=require("./package.json"); if(process.env.GITHUB_REF_NAME!==`v${p.version}`) process.exit(1)'
+      - run: npm ci
+      - run: npm run android:sync
+      - name: Restore Android signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_B64" && test -n "$STORE_PASSWORD"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/soft-room-release.p12"
+          chmod 600 "$RUNNER_TEMP/soft-room-release.p12"
+      - name: Build signed APK
+        env:
+          SOFT_ROOM_ANDROID_KEYSTORE: ${{ runner.temp }}/soft-room-release.p12
+          SOFT_ROOM_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        run: bash android/gradlew -p android assembleStableRelease --no-daemon
+      - name: Verify and package APK
+        run: |
+          apk=android/app/build/outputs/apk/stable/release/app-stable-release.apk
+          apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort -V | tail -1)
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+          grep -R -q 'releases/latest/download/android-update.json' android/app/src/main/assets/public/assets
+          mkdir -p artifacts
+          version=$(node -p 'require("./package.json").version')
+          version_code=$(node -e 'const [a,b,c]=require("./package.json").version.split(".").map(Number); process.stdout.write(String(a*1000000+b*1000+c))')
+          unique="Soft-Room-android-${version}.apk"
+          cp "$apk" artifacts/Soft-Room-android.apk
+          cp "$apk" "artifacts/$unique"
+          (cd artifacts && sha256sum Soft-Room-android.apk > Soft-Room-android.apk.sha256)
+          (cd artifacts && sha256sum "$unique" > "${unique}.sha256")
+          digest=$(sha256sum "artifacts/$unique" | cut -d ' ' -f 1)
+          VERSION="$version" BUILD="$version_code" APK_NAME="$unique" APK_SHA256="$digest" node -e 'const fs=require("fs"); const value={channel:"stable",build:Number(process.env.BUILD),version:process.env.VERSION,apkUrl:`https://github.com/gaozhengxin/soft-room/releases/download/v${process.env.VERSION}/${process.env.APK_NAME}`,sha256:process.env.APK_SHA256,publishedAt:new Date().toISOString()}; fs.writeFileSync("artifacts/android-update.json",JSON.stringify(value,null,2)+"\n")'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Soft-Room-release-${{ github.run_id }}-android
+          path: |
+            artifacts/Soft-Room-android*.apk*
+            artifacts/android-update.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: github.event_name == 'push'
+    needs: [ios, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Soft-Room-release-${{ github.run_id }}-*
+          path: artifacts
+          merge-multiple: true
+      - name: Verify release files
+        run: |
+          (cd artifacts && sha256sum -c Soft-Room-android.apk.sha256)
+          version=$(node -p 'require("./package.json").version')
+          (cd artifacts && sha256sum -c "Soft-Room-android-${version}.apk.sha256")
+          (cd artifacts && sha256sum -c Soft-Room-unsigned.ipa.sha256)
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            artifacts/Soft-Room-unsigned.ipa \
+            artifacts/Soft-Room-unsigned.ipa.sha256 \
+            artifacts/Soft-Room-android.apk \
+            artifacts/Soft-Room-android.apk.sha256 \
+            "artifacts/Soft-Room-android-${GITHUB_REF_NAME#v}.apk" \
+            "artifacts/Soft-Room-android-${GITHUB_REF_NAME#v}.apk.sha256" \
+            artifacts/android-update.json \
+            --verify-tag \
+            --title "Soft Room $GITHUB_REF_NAME" \
+            --notes-file .github/release-notes.md
