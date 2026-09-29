@@ -40,7 +40,7 @@ function roomState(saved:SavedRoom):PortableRoomState{return {version:1,roomId:r
 function restoreRoom(value:PortableRoomState):SavedRoom {if(value.version!==1)throw Error('Unsupported room state version');const room=parseInvite(invite(value.room));if(room.v===2&&typeof value.room.key==='string'&&/^[a-f0-9]{64}$/.test(value.room.key))room.key=value.room.key;if(roomId(room)!==value.roomId)throw Error('Invalid room state');return {room,created:value.created===true,...(typeof value.nickname==='string'?{nickname:value.nickname}:{}),...(Number.isSafeInteger(value.nonce)?{nonce:value.nonce}:{}),...(Number.isSafeInteger(value.epoch)?{epoch:value.epoch}:{})};}
 type ContactState=Contact&{deleted?:true;changedAt?:number};
 function contactState(value:ContactState):ContactState{const contact=validateContact(value);if(value.deleted!==undefined&&value.deleted!==true||value.changedAt!==undefined&&(!Number.isSafeInteger(value.changedAt)||value.changedAt<0))throw Error('Invalid contact state');return {...contact,...(value.deleted?{deleted:true as const}:{}),...(value.changedAt!==undefined?{changedAt:value.changedAt}:{})};}
-const contactTime=(state:ContactState,record:StoredRecord)=>state.changedAt??Date.parse(record.value.updatedAt);
+const contactTime=(state:ContactState,_record:StoredRecord)=>state.changedAt??0;
 const randomRkey=()=>bytesToHex(randomBytes(16));
 
 export class PortableStateRepository {
