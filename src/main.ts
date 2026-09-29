@@ -1,4 +1,5 @@
-import {inboxId,inboxRoom,parseInbox,sealDirect,openDirect,type Contact,type DirectMessage} from './dm.ts';
+import {loadSidebarOrder,saveSidebarOrder,orderSidebarIds,sortableSidebar} from './sidebar-order.ts';
+import {inboxId,inboxRoom,sealDirect,openDirect,type Contact,type DirectMessage} from './dm.ts';
 import type {Network} from './mesh-wire.ts';
 import {preserveScroll} from './scroll.ts';
 import {createIceProvider} from './ice.ts';
@@ -67,7 +68,7 @@ $('app').innerHTML=`<div class="shell">
 <form id="create"><label for="room-name" data-i18n="roomName"></label><input id="room-name" maxlength="32" data-placeholder="roomPlaceholder" autocomplete="off"/><label class="toggle"><input id="pow" type="checkbox" checked/><span class="switch"></span><span><span data-i18n="powOption"></span><small data-i18n="powHint"></small></span></label><button class="primary" id="create-button" data-i18n="create"></button></form>
 <div class="divider"><span data-i18n="orJoin"></span></div><form id="join"><label for="invite-input" data-i18n="inviteLabel"></label><textarea id="invite-input" rows="2" data-placeholder="invitePlaceholder" spellcheck="false" autocomplete="off"></textarea><button id="join-button" data-i18n="join"></button></form>
 <p class="footnote" data-i18n="invitationTip"></p>
-<section class="room-manager"><div class="manager-heading"><h3 data-i18n="myRooms"></h3><span id="room-count"></span></div><p class="footnote" data-i18n="roomsHint"></p><div id="room-list"></div></section>
+<section class="room-manager"><div id="room-list"></div></section>
 </aside>
 <section class="panel chat" data-label="chatLabel"><div class="chat-head"><div><div class="eyebrow" id="room-label"></div><h2 id="room-title"></h2></div><div class="status" id="status" role="status"></div></div>
 <div id="room-tools" class="room-tools" hidden><button id="copy" data-i18n="copy"></button><button id="reconnect" data-i18n="retry"></button><button id="leave" data-i18n="leave" data-title="leaveTip"></button></div>
@@ -125,7 +126,7 @@ const manager=document.querySelector('.room-manager')!;
 const brand=document.querySelector('.brand')!;
 sidebar.replaceChildren(brand);sidebar.insertAdjacentHTML('afterbegin',`<button id="sidebar-close" type="button" class="icon-button sidebar-close" data-label="close">${closeIcon}</button>`);
 sidebar.insertAdjacentHTML('beforeend','<button id="new-room" class="primary" data-i18n="newRoom"></button>');sidebar.append(manager);
-sidebar.insertAdjacentHTML('beforeend',`<div class="sidebar-bottom"><p class="identity-heading" data-i18n="myIdentity"></p><button id="my-identity" class="profile-button"><span class="profile-avatar" aria-hidden="true">${userIcon}</span><span class="profile-copy"><b id="identity"></b><small data-i18n="temporaryIdentity"></small></span><span class="profile-settings" aria-hidden="true">${settingsIcon}</span></button><p data-i18n="temporaryShort"></p><button id="logout" class="sidebar-logout" type="button">${logoutIcon}<span data-i18n="logout"></span></button></div>`);
+sidebar.insertAdjacentHTML('beforeend',`<div class="sidebar-bottom"><button id="my-identity" class="profile-button"><span class="profile-avatar" aria-hidden="true">${userIcon}</span><span class="profile-copy"><b id="identity"></b><small data-i18n="temporaryIdentity"></small></span><span class="profile-settings" aria-hidden="true">${settingsIcon}</span></button><button id="logout" class="sidebar-logout" type="button">${logoutIcon}<span data-i18n="logout"></span></button></div>`);
 const releaseLink='https://github.com/gaozhengxin/soft-room/releases/latest';
 const androidChannel=import.meta.env.VITE_ANDROID_CHANNEL==='test'?'test':'stable';
 const androidApkLink=androidChannel==='test'?'https://github.com/gaozhengxin/soft-room/releases/download/android-test/Soft-Room-android-test.apk':'https://github.com/gaozhengxin/soft-room/releases/latest/download/Soft-Room-android.apk';
@@ -163,33 +164,25 @@ const meshPanel=mountMeshPanel({host:shell,button:meshButton,t,isSelf:key=>key==
 // Inbox has its own lifetime: changing ordinary rooms never unsubscribes it.
 const directHistories=new Map<string,DirectMessage[]>(),directPeers=new Map<string,Contact>(),directUnread=new Map<string,number>(),directSeen=new Set<string>();
 let inboxConnection:Awaited<ReturnType<typeof connect>>|undefined,inboxController:AbortController|undefined,inboxConnecting=false,inboxStopped=false,inboxRetry=0,dmSending=false;
-const dmSection=document.createElement('section');dmSection.className='dm-manager';dmSection.innerHTML='<div class="manager-heading"><h3 data-i18n="dmRooms"></h3><button id="dm-add" class="icon-button" data-label="dmAdd">+</button></div><p id="inbox-status" role="status"></p><div id="dm-list"></div>';manager.append(dmSection);
+let sidebarOrder=loadSidebarOrder(session.identity);
+const isSidebarDragging=sortableSidebar($('room-list'),ids=>{sidebarOrder=ids;saveSidebarOrder(session.identity,ids);},()=>renderRooms());
 const profilePanel=makeDialog('profile-dialog','dmProfile');profilePanel.innerHTML='<h3 id="profile-name"></h3><p class="scope-hint" data-i18n="dmProfileHint"></p><code id="profile-key" class="identity-key"></code><p id="profile-inbox" class="identity-key"></p><div class="profile-actions"><button id="profile-save" data-i18n="dmSave"></button><button id="profile-message" class="primary" data-i18n="dmMessage"></button></div><p id="profile-feedback" role="status"></p>';
-const dmAddPanel=makeDialog('dm-add-dialog','dmAdd');dmAddPanel.innerHTML='<form id="dm-add-form"><label for="dm-address" data-i18n="dmAddress"></label><textarea id="dm-address" rows="3" maxlength="80" required></textarea><button class="primary" data-i18n="dmMessage"></button><p id="dm-add-error" role="status"></p></form>';
 identityPanel.insertAdjacentHTML('beforeend','<p data-i18n="dmMyInbox"></p><p id="my-inbox" class="identity-key"></p><button id="copy-inbox" data-i18n="copy"></button>');$('my-inbox').textContent=inboxId(session.identity.publicKey);$('copy-inbox').onclick=()=>void copyText(inboxId(session.identity.publicKey)).then(()=>notice('copied')).catch(()=>notice('copyFallback'));
-$('dm-add').onclick=()=>{$('dm-add-error').textContent='';showPanel('dm-add-dialog');};
-$('dm-add-form').onsubmit=event=>{event.preventDefault();try{const key=parseInbox($<HTMLTextAreaElement>('dm-address').value);if(key===session.identity.publicKey)throw Error();void enterDirect(key);}catch{$('dm-add-error').textContent=t('dmInvalid');}};
 function directName(key:string){return session.contacts?.find(c=>c.publicKey===key)?.name||directPeers.get(key)?.name||t('visitor',{id:key.slice(0,8)});}
 function openProfile(key:string,name?:string){
  $('profile-name').textContent=name||directName(key);$('profile-key').textContent=key;$('profile-inbox').textContent=inboxId(key);$('profile-feedback').textContent='';
  const saved=session.contacts?.some(c=>c.publicKey===key),self=key===session.identity.publicKey;const button=$<HTMLButtonElement>('profile-save');button.disabled=!!saved||self;button.textContent=t(saved?'dmSaved':'dmSave');$('profile-message').hidden=self;
- button.onclick=()=>{if((session.contacts?.length||0)>=100){$('profile-feedback').textContent=t('dmLimit');return;}const contact={publicKey:key,...(name?{name}:{})};(session.contacts??=[]).push(contact);save();renderDirectRooms();button.disabled=true;button.textContent=t('dmSaved');};
+ button.onclick=()=>{if((session.contacts?.length||0)>=100){$('profile-feedback').textContent=t('dmLimit');return;}const contact={publicKey:key,...(name?{name}:{})};(session.contacts??=[]).push(contact);save();renderRooms();button.disabled=true;button.textContent=t('dmSaved');};
  $('profile-message').onclick=()=>void enterDirect(key,name);showPanel('profile-dialog');
 }
-function renderDirectRooms(){
- const list=$('dm-list');if(!list)return;list.replaceChildren();const peers=new Map(directPeers);for(const contact of session.contacts||[])peers.set(contact.publicKey,contact);
- for(const [key] of peers){const row=document.createElement('article');row.className='saved-room dm-room'+(activeDM===key?' selected':'');const button=document.createElement('button');button.className='room-choice';const title=document.createElement('b');title.textContent=directName(key);const info=document.createElement('small');info.textContent=t(session.contacts?.some(c=>c.publicKey===key)?'dmContact':'dmNew')+(directUnread.get(key)?' · '+directUnread.get(key):'');button.append(title,info);button.onclick=()=>void enterDirect(key);if(activeDM===key)button.setAttribute('aria-current','true');const profile=document.createElement('button');profile.className='icon-button';profile.innerHTML=userIcon;profile.setAttribute('aria-label',t('dmProfile'));profile.onclick=()=>openProfile(key,directName(key));row.append(button,profile);list.append(row);}
- if(!peers.size){const empty=document.createElement('p');empty.className='footnote';empty.textContent=t('dmNoContacts');list.append(empty);}
- $('inbox-status').textContent=t(inboxConnection?.connected()?'dmListening':inboxConnecting?'dmConnecting':'dmRetrying');
-}
 async function enterDirect(key:string,name?:string){closePanels();await disconnect();activeDM=key;directPeers.set(key,{publicKey:key,...(name?{name}:{})});directUnread.delete(key);if(mobileLayout.matches)toggleSidebar(false);notice();controls();renderRooms();renderMessages();void ensureInbox();}
-function acceptDirect(message:DirectMessage,outgoing=false){const token=message.sender+':'+message.id;if(directSeen.has(token))return;directSeen.add(token);if(directSeen.size>20000)directSeen.delete(directSeen.values().next().value!);const peer=outgoing?message.recipient:message.sender;if(peer===session.identity.publicKey)return;const messages=directHistories.get(peer)||[];if(messages.some(m=>m.id===message.id&&m.sender===message.sender))return;if(!directPeers.has(peer)&&directPeers.size>=200)return;directPeers.set(peer,{publicKey:peer,...(!outgoing&&message.nickname?{name:message.nickname}:{})});messages.push(message);messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));directHistories.set(peer,messages.slice(-1000));if(activeDM===peer)renderMessages();else if(!outgoing)directUnread.set(peer,(directUnread.get(peer)||0)+1);renderDirectRooms();}
+function acceptDirect(message:DirectMessage,outgoing=false){const token=message.sender+':'+message.id;if(directSeen.has(token))return;directSeen.add(token);if(directSeen.size>20000)directSeen.delete(directSeen.values().next().value!);const peer=outgoing?message.recipient:message.sender;if(peer===session.identity.publicKey)return;const messages=directHistories.get(peer)||[];if(messages.some(m=>m.id===message.id&&m.sender===message.sender))return;if(!directPeers.has(peer)&&directPeers.size>=200)return;directPeers.set(peer,{publicKey:peer,...(!outgoing&&message.nickname?{name:message.nickname}:{})});messages.push(message);messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));directHistories.set(peer,messages.slice(-1000));if(activeDM===peer)renderMessages();else if(!outgoing)directUnread.set(peer,(directUnread.get(peer)||0)+1);renderRooms();}
 function receiveDirect(payload:Uint8Array){try{acceptDirect(openDirect(session.identity,payload));}catch{ /* Ignore unauthenticated or expired traffic. */ }}
 function stopInbox(){inboxStopped=true;inboxController?.abort();void inboxConnection?.stop();inboxConnection=undefined;}
 async function ensureInbox(){
- if(inboxStopped||inboxConnecting||inboxConnection?.connected()||Date.now()<inboxRetry)return;inboxConnecting=true;inboxController?.abort();const abort=new AbortController();inboxController=abort;renderDirectRooms();
+ if(inboxStopped||inboxConnecting||inboxConnection?.connected()||Date.now()<inboxRetry)return;inboxConnecting=true;inboxController?.abort();const abort=new AbortController();inboxController=abort;renderRooms();
  try{await inboxConnection?.stop();inboxConnection=undefined;const room=inboxRoom(session.identity.publicKey);const next=await connect(room,receiveDirect,abort.signal);if(abort.signal.aborted){await next.stop();return;}inboxConnection=next;void Promise.allSettled([next.history(page=>page.forEach(receiveDirect)),storageHistory(roomId(room),page=>page.forEach(receiveDirect),abort.signal)]);}
- catch{inboxRetry=Date.now()+10000;}finally{inboxConnecting=false;renderDirectRooms();if(activeDM)controls();}
+ catch{inboxRetry=Date.now()+10000;}finally{inboxConnecting=false;renderRooms();if(activeDM)controls();}
 }
 async function sendDirectInput(){const key=activeDM,input=$<HTMLTextAreaElement>('message'),transport=inboxConnection,body=input.value;if(!key||!body.trim()||dmSending||!transport?.connected())return;dmSending=true;controls();try{const packet=sealDirect(session.identity,key,body,session.name);const stored=await transport.send(packet.payload,true,inboxRoom(key));if(!stored)void backupMessage(key,packet.payload).catch(()=>{});acceptDirect(packet.message,true);if(activeDM===key){if(input.value===body)input.value='';notice('sent');}}catch{if(activeDM===key)notice('sendFailed');}finally{dmSending=false;controls();}}
 // Pointer capture supports mouse and touch; arrows provide the same resize action from the keyboard.
@@ -280,28 +273,31 @@ function controls(){
  $('room-label').textContent=t(active?'privateRoom':'roomEyebrow');
  $('status').textContent=t(statusKey);$('status').classList.toggle('ready',statusKey==='connected');
  renderProgress();
- if(activeDM){$('room-title').textContent=directName(activeDM);$('room-label').textContent=t('dmRooms');const ready=!!inboxConnection?.connected();$('status').textContent=t(ready?'connected':inboxConnecting?'connecting':'disconnected');$('status').classList.toggle('ready',ready);$('send').toggleAttribute('disabled',!ready||dmSending);$('message').toggleAttribute('disabled',!ready);$('message').setAttribute('placeholder',t(ready?'messagePlaceholder':'messageDisabled'));$('attach').hidden=true;$('resume-work').hidden=true;}else $('attach').hidden=false;
+ if(activeDM){$('room-title').textContent=directName(activeDM);$('room-label').textContent='';const ready=!!inboxConnection?.connected();$('status').textContent=t(ready?'connected':inboxConnecting?'connecting':'disconnected');$('status').classList.toggle('ready',ready);$('send').toggleAttribute('disabled',!ready||dmSending);$('message').toggleAttribute('disabled',!ready);$('message').setAttribute('placeholder',t(ready?'messagePlaceholder':'messageDisabled'));$('attach').hidden=true;$('resume-work').hidden=true;}else $('attach').hidden=false;
 }
 function renderRooms(){
- renderDirectRooms();
- const list=$('room-list');list.replaceChildren();$('room-count').textContent=String(session.rooms.length);
- if(!session.rooms.length){const p=document.createElement('p');p.className='footnote';p.textContent=t('noRooms');list.append(p);return;}
+ if(isSidebarDragging())return;
+ const list=$('room-list'),rows=new Map<string,HTMLElement>();
  for(const saved of session.rooms){
-  const id=roomId(saved.room),current=active&&id===roomId(active.room);
-  const row=document.createElement('article');row.className='saved-room'+(current?' selected':'');
-  const button=document.createElement('button');button.className='room-choice';
-  const heading=document.createElement('b');heading.textContent=saved.room.name;
-  const info=document.createElement('small');info.textContent=t(current?'currentRoom':saved.created?'created':'joined');button.append(heading,info);if(current)button.setAttribute('aria-current','true');
+  const id=roomId(saved.room),current=!!active&&id===roomId(active.room),row=document.createElement('article');row.className='saved-room'+(current?' selected':'');
+  const button=document.createElement('button');button.className='room-choice';button.textContent=saved.room.name;button.title=saved.room.name;if(current)button.setAttribute('aria-current','true');
   button.onclick=()=>{if(!(current&&(busy||connection?.connected())))void enter(saved);else if(mobileLayout.matches)toggleSidebar(false);};
   const more=document.createElement('details');more.className='room-actions';const summary=document.createElement('summary');summary.textContent='···';summary.setAttribute('aria-label',t('roomInfo'));more.append(summary);
-  const copy=document.createElement('button');copy.textContent=t('copy');copy.onclick=()=>{more.open=false;void copyInvitation(saved.room);};
-  const remove=document.createElement('button');remove.textContent=t('remove');remove.onclick=()=>void removeRoom(saved);more.append(copy,remove);
-  row.append(button,more);list.append(row);
+  const copy=document.createElement('button');copy.textContent=t('copy');copy.onclick=()=>{more.open=false;void copyInvitation(saved.room);};const remove=document.createElement('button');remove.textContent=t('remove');remove.onclick=()=>void removeRoom(saved);more.append(copy,remove);
+  row.append(button,more);rows.set('room:'+id,row);
  }
+ const peers=new Map(directPeers);for(const contact of session.contacts||[])peers.set(contact.publicKey,contact);
+ for(const [key] of peers){
+  const row=document.createElement('article');row.className='saved-room dm-room'+(activeDM===key?' selected':'');const button=document.createElement('button');button.className='room-choice';button.textContent=directName(key);button.title=directName(key);button.onclick=()=>void enterDirect(key);if(activeDM===key)button.setAttribute('aria-current','true');row.append(button);
+  const unread=directUnread.get(key);if(unread){const badge=document.createElement('span');badge.className='unread-count';badge.textContent=String(unread);row.append(badge);}
+  const profile=document.createElement('button');profile.className='icon-button room-profile';profile.innerHTML=userIcon;profile.setAttribute('aria-label',t('dmProfile'));profile.onclick=()=>openProfile(key,directName(key));row.append(profile);rows.set('dm:'+key,row);
+ }
+ for(const [id,row] of rows){row.dataset.sidebarId=id;const handle=document.createElement('button');handle.type='button';handle.className='room-drag';handle.setAttribute('aria-label',t('reorderRoom'));handle.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 5h.01M8 12h.01M8 19h.01M16 5h.01M16 12h.01M16 19h.01"/></svg>';row.prepend(handle);}
+ list.replaceChildren(...orderSidebarIds([...rows.keys()],sidebarOrder).map(id=>rows.get(id)!));
 }
 function renderMessages(){
  const log=$('messages'),restore=preserveScroll(log);log.replaceChildren();const messages:ChatEntry[]=activeDM?directHistories.get(activeDM)||[]:active?histories.get(roomId(active.room))||[]:[];
- if(!messages.length){const empty=document.createElement('div');empty.className='empty';empty.innerHTML='<div class="room-art"><span>✳</span><i></i><i></i></div><h3></h3><p></p><span class="pill"></span><div class="sssp-blueprint" aria-hidden="true"><img src="/sssp-vtol.svg" alt=""/><span>SSSP / VTOL–01</span></div>';empty.querySelector('h3')!.textContent=t(session.theme==='sssp'?'patrolEmpty':'emptyHeading');empty.querySelector('p')!.textContent=activeDM?t('dmEmpty'):t(active?'emptyRoom':'emptyText');empty.querySelector('.pill')!.textContent=t('emptyPill');if(!active&&!activeDM){const button=document.createElement('button');button.className='primary welcome-action';button.textContent=t('newRoom');button.onclick=openNew;empty.append(button);}log.append(empty);return;}
+ if(!messages.length){if(activeDM)return;const empty=document.createElement('div');empty.className='empty';empty.innerHTML='<div class="room-art"><span>✳</span><i></i><i></i></div><h3></h3><p></p><span class="pill"></span><div class="sssp-blueprint" aria-hidden="true"><img src="/sssp-vtol.svg" alt=""/><span>SSSP / VTOL–01</span></div>';empty.querySelector('h3')!.textContent=t(session.theme==='sssp'?'patrolEmpty':'emptyHeading');empty.querySelector('p')!.textContent=activeDM?t('dmEmpty'):t(active?'emptyRoom':'emptyText');empty.querySelector('.pill')!.textContent=t('emptyPill');if(!active&&!activeDM){const button=document.createElement('button');button.className='primary welcome-action';button.textContent=t('newRoom');button.onclick=openNew;empty.append(button);}log.append(empty);return;}
  for(const m of messages){
   if(m.nameChange){const change=document.createElement('p');change.className='name-change';change.dataset.message=m.id+'-name';const fallback=t('visitor',{id:m.sender.slice(0,8)});change.textContent=t('nameChanged',{from:m.nameChange.from||fallback,to:m.nameChange.to||fallback,id:m.sender.slice(0,8)});log.append(change);}
   if(m.kind==='heartbeat')continue;
