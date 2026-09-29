@@ -1,3 +1,4 @@
+import {inboxId,inboxRoom,parseInbox,sealDirect,openDirect,type Contact,type DirectMessage} from './dm.ts';
 import type {Network} from './mesh-wire.ts';
 import {preserveScroll} from './scroll.ts';
 import {createIceProvider} from './ice.ts';
@@ -45,6 +46,7 @@ const histories=new Map<string,ChatEntry[]>();
 const membersByRoom=new Map<string,Map<string,Member>>();
 let heartbeatFlight:Promise<void>|undefined,lastHeartbeatAttempt=0;
 const seenIds=new Map<string,Set<string>>();
+let activeDM:string|undefined;
 let active:SavedRoom|undefined,connection:Awaited<ReturnType<typeof connect>>|undefined;
 let mesh:RoomMesh|undefined;
 let generation=0,busy=false,sending=false,fileSending=false,controller:AbortController|undefined;
@@ -56,7 +58,7 @@ function flushPersistentState(){if(!persistentDirty||!isPersistent())return pers
 const save=()=>{cacheFailed=!saveSession(storage,session);renderCache();if(isPersistent()){persistentDirty=true;window.clearTimeout(persistentTimer);persistentTimer=window.setTimeout(()=>{persistentTimer=0;void flushPersistentState();},250);}};
 const PERSISTENT_SYNC_INTERVAL=4_000;
 let persistentRefresh:Promise<void>|undefined,lastPersistentRefresh=Date.now();
-function refreshAccountState(force=false){if(!isPersistent()||persistentRefresh||(!force&&Date.now()-lastPersistentRefresh<PERSISTENT_SYNC_INTERVAL))return;lastPersistentRefresh=Date.now();persistentRefresh=(async()=>{try{if(persistentTimer){window.clearTimeout(persistentTimer);persistentTimer=0;}await flushPersistentState();const restored=await refreshPersistentState(session.language);if(!restored||restored.identity.publicKey!==session.identity.publicKey||restored.name===session.name)return;if(restored.name)session.name=restored.name;else delete session.name;cacheFailed=!saveSession(storage,session);languageChanged();}catch{ /* Keep the last local state while the PDS is unavailable. */ }finally{persistentRefresh=undefined;}})();}
+function refreshAccountState(force=false){if(!isPersistent()||persistentRefresh||(!force&&Date.now()-lastPersistentRefresh<PERSISTENT_SYNC_INTERVAL))return;lastPersistentRefresh=Date.now();persistentRefresh=(async()=>{try{if(persistentTimer){window.clearTimeout(persistentTimer);persistentTimer=0;}await flushPersistentState();const restored=await refreshPersistentState(session.language);if(!restored||restored.identity.publicKey!==session.identity.publicKey)return;let contactsChanged=false;for(const contact of restored.contacts||[])if(!(session.contacts||[]).some(c=>c.publicKey===contact.publicKey)&&(session.contacts?.length||0)<100){(session.contacts??=[]).push(contact);contactsChanged=true;}if(!contactsChanged&&restored.name===session.name)return;if(restored.name)session.name=restored.name;else delete session.name;cacheFailed=!saveSession(storage,session);languageChanged();}catch{ /* Keep the last local state while the PDS is unavailable. */ }finally{persistentRefresh=undefined;}})();}
 $('app').innerHTML=`<div class="shell">
 <header class="top"><a class="brand" href="/" data-label="home"><span class="mark"><span class="soft-monogram">s<span>r</span></span><img class="sssp-emblem" src="/sssp-emblem.svg" alt=""/></span><span>soft room<small data-i18n="tagline"></small></span></a><div class="top-tools"><div class="identity"><span class="avatar">✳</span><span><small data-i18n="temporaryIdentity"></small><b id="identity"></b></span></div><label class="sr-only" for="skin" data-i18n="skin"></label><select id="skin"><option value="soft" data-i18n="skinSoft"></option><option value="sssp" data-i18n="skinSssp"></option><option value="kabutack" data-i18n="skinKabutack"></option></select><label class="sr-only" for="language" data-i18n="language"></label><select id="language"><option value="zh">中文</option><option value="en">English</option></select></div></header>
 <section class="session-banner"><div><strong id="cache-warning"></strong><p data-i18n="sessionDetail"></p></div><button id="clear-session" data-i18n="clearSession"></button></section>
@@ -77,7 +79,7 @@ $('app').innerHTML=`<div class="shell">
 <button id="resume-work" data-i18n="resumeWork" hidden></button><div id="notice" class="notice" role="status" aria-live="polite"></div><form id="composer" class="composer"><button id="attach" type="button" class="icon-button attach-button" data-label="fileShare">${paperclipIcon}</button><label class="sr-only" for="message" data-i18n="messageLabel"></label><textarea id="message" rows="1" maxlength="2000" disabled></textarea><button id="send" class="send" disabled data-label="send">↑</button></form><div class="chat-foot"><span data-i18n="encrypted"></span><span data-i18n="keyboard"></span></div>
 </section></main><footer><span data-i18n="footer"></span><span data-i18n="footerMark"></span></footer></div>`;
 // Reuse the existing controls in scoped panels; the chat remains the main surface.
-const shell=document.querySelector('.shell')!;
+const shell=document.querySelector<HTMLElement>('.shell')!;
 function makeDialog(id:string,title:TextKey){
  const dialog=document.createElement('dialog');dialog.id=id;dialog.className='sheet';
  dialog.innerHTML=`<div class="sheet-head"><h2 data-i18n="${title}"></h2><button type="button" class="icon-button" data-label="close">×</button></div><div class="sheet-body"></div>`;
@@ -158,6 +160,43 @@ $('global-name-form').onsubmit=event=>{event.preventDefault();try{const name=nor
 $('download-recovery-file').onclick=()=>void(async()=>{const button=$<HTMLButtonElement>('download-recovery-file'),feedback=$('recovery-file-feedback');button.disabled=true;feedback.textContent='';try{const contents=await exportRecoveryFile();if(!contents){feedback.textContent=t('recoveryFileMissing');return;}const blob=new Blob([contents],{type:'application/json'}),name=`Soft-Room-Recovery-${new Date().toISOString().slice(0,10)}.softroom-recovery.json`,native=await saveNativeFileDetailed(blob,name);if(native==='cancelled')return;if(native==='unsupported'){const url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download=name;anchor.rel='noopener';anchor.hidden=true;document.body.append(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),60_000);}feedback.textContent=t('recoveryFileSaved');}catch{feedback.textContent=t('recoveryFileFailed');}finally{button.disabled=false;}})();
 $('share-copy').onclick=async()=>{const button=$<HTMLButtonElement>('share-copy');button.classList.add('copy-pressed');setTimeout(()=>button.classList.remove('copy-pressed'),260);const input=$<HTMLTextAreaElement>('share-link');if(sharingRoom)input.value=invitationLink(invite(sharingRoom),nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);try{await copyText(input.value);$('share-feedback').textContent=t('copied');}catch{input.focus();input.select();$('share-feedback').textContent=t('copyFallback');}};
 const meshPanel=mountMeshPanel({host:shell,button:meshButton,t,isSelf:key=>key===session.identity.publicKey,selfName:()=>effectiveName(session.name,active?.nickname)||'',getMesh:()=>mesh,canJoin:()=>!!active&&!!connection?.connected()&&canWrite(active),name:key=>{const m=active?membersByRoom.get(roomId(active.room))?.get(key):undefined;return key===session.identity.publicKey?effectiveName(session.name,active?.nickname)||t('you'):m?.name||t('visitor',{id:key.slice(0,8)});}});
+// Inbox has its own lifetime: changing ordinary rooms never unsubscribes it.
+const directHistories=new Map<string,DirectMessage[]>(),directPeers=new Map<string,Contact>(),directUnread=new Map<string,number>(),directSeen=new Set<string>();
+let inboxConnection:Awaited<ReturnType<typeof connect>>|undefined,inboxController:AbortController|undefined,inboxConnecting=false,inboxStopped=false,inboxRetry=0,dmSending=false;
+const dmSection=document.createElement('section');dmSection.className='dm-manager';dmSection.innerHTML='<div class="manager-heading"><h3 data-i18n="dmRooms"></h3><button id="dm-add" class="icon-button" data-label="dmAdd">+</button></div><p id="inbox-status" role="status"></p><div id="dm-list"></div>';manager.append(dmSection);
+const profilePanel=makeDialog('profile-dialog','dmProfile');profilePanel.innerHTML='<h3 id="profile-name"></h3><p class="scope-hint" data-i18n="dmProfileHint"></p><code id="profile-key" class="identity-key"></code><p id="profile-inbox" class="identity-key"></p><div class="profile-actions"><button id="profile-save" data-i18n="dmSave"></button><button id="profile-message" class="primary" data-i18n="dmMessage"></button></div><p id="profile-feedback" role="status"></p>';
+const dmAddPanel=makeDialog('dm-add-dialog','dmAdd');dmAddPanel.innerHTML='<form id="dm-add-form"><label for="dm-address" data-i18n="dmAddress"></label><textarea id="dm-address" rows="3" maxlength="80" required></textarea><button class="primary" data-i18n="dmMessage"></button><p id="dm-add-error" role="status"></p></form>';
+identityPanel.insertAdjacentHTML('beforeend','<p data-i18n="dmMyInbox"></p><p id="my-inbox" class="identity-key"></p><button id="copy-inbox" data-i18n="copy"></button>');$('my-inbox').textContent=inboxId(session.identity.publicKey);$('copy-inbox').onclick=()=>void copyText(inboxId(session.identity.publicKey)).then(()=>notice('copied')).catch(()=>notice('copyFallback'));
+$('dm-add').onclick=()=>{$('dm-add-error').textContent='';showPanel('dm-add-dialog');};
+$('dm-add-form').onsubmit=event=>{event.preventDefault();try{const key=parseInbox($<HTMLTextAreaElement>('dm-address').value);if(key===session.identity.publicKey)throw Error();void enterDirect(key);}catch{$('dm-add-error').textContent=t('dmInvalid');}};
+function directName(key:string){return session.contacts?.find(c=>c.publicKey===key)?.name||directPeers.get(key)?.name||t('visitor',{id:key.slice(0,8)});}
+function openProfile(key:string,name?:string){
+ $('profile-name').textContent=name||directName(key);$('profile-key').textContent=key;$('profile-inbox').textContent=inboxId(key);$('profile-feedback').textContent='';
+ const saved=session.contacts?.some(c=>c.publicKey===key),self=key===session.identity.publicKey;const button=$<HTMLButtonElement>('profile-save');button.disabled=!!saved||self;button.textContent=t(saved?'dmSaved':'dmSave');$('profile-message').hidden=self;
+ button.onclick=()=>{if((session.contacts?.length||0)>=100){$('profile-feedback').textContent=t('dmLimit');return;}const contact={publicKey:key,...(name?{name}:{})};(session.contacts??=[]).push(contact);save();renderDirectRooms();button.disabled=true;button.textContent=t('dmSaved');};
+ $('profile-message').onclick=()=>void enterDirect(key,name);showPanel('profile-dialog');
+}
+function renderDirectRooms(){
+ const list=$('dm-list');if(!list)return;list.replaceChildren();const peers=new Map(directPeers);for(const contact of session.contacts||[])peers.set(contact.publicKey,contact);
+ for(const [key] of peers){const row=document.createElement('article');row.className='saved-room dm-room'+(activeDM===key?' selected':'');const button=document.createElement('button');button.className='room-choice';const title=document.createElement('b');title.textContent=directName(key);const info=document.createElement('small');info.textContent=t(session.contacts?.some(c=>c.publicKey===key)?'dmContact':'dmNew')+(directUnread.get(key)?' · '+directUnread.get(key):'');button.append(title,info);button.onclick=()=>void enterDirect(key);if(activeDM===key)button.setAttribute('aria-current','true');const profile=document.createElement('button');profile.className='icon-button';profile.innerHTML=userIcon;profile.setAttribute('aria-label',t('dmProfile'));profile.onclick=()=>openProfile(key,directName(key));row.append(button,profile);list.append(row);}
+ if(!peers.size){const empty=document.createElement('p');empty.className='footnote';empty.textContent=t('dmNoContacts');list.append(empty);}
+ $('inbox-status').textContent=t(inboxConnection?.connected()?'dmListening':inboxConnecting?'dmConnecting':'dmRetrying');
+}
+async function enterDirect(key:string,name?:string){closePanels();await disconnect();activeDM=key;directPeers.set(key,{publicKey:key,...(name?{name}:{})});directUnread.delete(key);if(mobileLayout.matches)toggleSidebar(false);notice();controls();renderRooms();renderMessages();void ensureInbox();}
+function acceptDirect(message:DirectMessage,outgoing=false){const token=message.sender+':'+message.id;if(directSeen.has(token))return;directSeen.add(token);if(directSeen.size>20000)directSeen.delete(directSeen.values().next().value!);const peer=outgoing?message.recipient:message.sender;if(peer===session.identity.publicKey)return;const messages=directHistories.get(peer)||[];if(messages.some(m=>m.id===message.id&&m.sender===message.sender))return;if(!directPeers.has(peer)&&directPeers.size>=200)return;directPeers.set(peer,{publicKey:peer,...(!outgoing&&message.nickname?{name:message.nickname}:{})});messages.push(message);messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));directHistories.set(peer,messages.slice(-1000));if(activeDM===peer)renderMessages();else if(!outgoing)directUnread.set(peer,(directUnread.get(peer)||0)+1);renderDirectRooms();}
+function receiveDirect(payload:Uint8Array){try{acceptDirect(openDirect(session.identity,payload));}catch{ /* Ignore unauthenticated or expired traffic. */ }}
+function stopInbox(){inboxStopped=true;inboxController?.abort();void inboxConnection?.stop();inboxConnection=undefined;}
+async function ensureInbox(){
+ if(inboxStopped||inboxConnecting||inboxConnection?.connected()||Date.now()<inboxRetry)return;inboxConnecting=true;inboxController?.abort();const abort=new AbortController();inboxController=abort;renderDirectRooms();
+ try{await inboxConnection?.stop();inboxConnection=undefined;const room=inboxRoom(session.identity.publicKey);const next=await connect(room,receiveDirect,abort.signal);if(abort.signal.aborted){await next.stop();return;}inboxConnection=next;void Promise.allSettled([next.history(page=>page.forEach(receiveDirect)),storageHistory(roomId(room),page=>page.forEach(receiveDirect),abort.signal)]);}
+ catch{inboxRetry=Date.now()+10000;}finally{inboxConnecting=false;renderDirectRooms();if(activeDM)controls();}
+}
+async function sendDirectInput(){const key=activeDM,input=$<HTMLTextAreaElement>('message'),transport=inboxConnection,body=input.value;if(!key||!body.trim()||dmSending||!transport?.connected())return;dmSending=true;controls();try{const packet=sealDirect(session.identity,key,body,session.name);const stored=await transport.send(packet.payload,true,inboxRoom(key));if(!stored)void backupMessage(key,packet.payload).catch(()=>{});acceptDirect(packet.message,true);if(activeDM===key){if(input.value===body)input.value='';notice('sent');}}catch{if(activeDM===key)notice('sendFailed');}finally{dmSending=false;controls();}}
+// Pointer capture supports mouse and touch; arrows provide the same resize action from the keyboard.
+const resizeHandle=document.createElement('div');resizeHandle.id='sidebar-resize';resizeHandle.tabIndex=0;resizeHandle.setAttribute('role','separator');resizeHandle.setAttribute('aria-orientation','vertical');resizeHandle.dataset.label='sidebarResize';sidebar.append(resizeHandle);
+function resizeSidebar(width:number){const max=Math.max(220,Math.min(520,innerWidth-48)),value=Math.round(Math.max(220,Math.min(max,width)));shell.style.setProperty('--sidebar-width',value+'px');resizeHandle.setAttribute('aria-valuenow',String(value));resizeHandle.setAttribute('aria-valuemin','220');resizeHandle.setAttribute('aria-valuemax',String(max));}
+resizeHandle.onpointerdown=e=>{resizeHandle.setPointerCapture(e.pointerId);e.preventDefault();};resizeHandle.onpointermove=e=>{if(resizeHandle.hasPointerCapture(e.pointerId))resizeSidebar(e.clientX-sidebar.getBoundingClientRect().left);};resizeHandle.onpointerup=e=>resizeHandle.releasePointerCapture(e.pointerId);resizeHandle.onkeydown=e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();resizeSidebar(sidebar.getBoundingClientRect().width+(e.key==='ArrowRight'?20:-20));}};resizeSidebar(264);
+window.addEventListener('pagehide',()=>{inboxController?.abort();});
 let membersView='';
 const savedToast=document.createElement('div');savedToast.className='saved-toast';savedToast.setAttribute('role','status');savedToast.setAttribute('aria-live','polite');savedToast.hidden=true;document.body.append(savedToast);
 let toastTimer:ReturnType<typeof setTimeout>|undefined;
@@ -183,7 +222,7 @@ function renderMembers(){
   const header=document.createElement('div');const name=document.createElement('b');name.textContent=member.name||t('visitor',{id:member.publicKey.slice(0,8)});if(member.publicKey===session.identity.publicKey)name.textContent+=' · '+t('you');
   const status=document.createElement('span');status.className='member-status'+(online(member)?' online':'');status.textContent=t(online(member)?'memberOnline':'memberOffline');header.append(name,status);
   const label=document.createElement('small');label.textContent=t('publicKey');const key=document.createElement('code');key.textContent=member.publicKey;
-  row.append(header,label,key);list.append(row);
+  const profile=document.createElement('button');profile.className='sender-profile';profile.textContent=member.publicKey;profile.onclick=()=>openProfile(member.publicKey,member.name);row.append(header,label,profile);list.append(row);
  }
 }
 async function sendHeartbeat(){
@@ -241,8 +280,10 @@ function controls(){
  $('room-label').textContent=t(active?'privateRoom':'roomEyebrow');
  $('status').textContent=t(statusKey);$('status').classList.toggle('ready',statusKey==='connected');
  renderProgress();
+ if(activeDM){$('room-title').textContent=directName(activeDM);$('room-label').textContent=t('dmRooms');const ready=!!inboxConnection?.connected();$('status').textContent=t(ready?'connected':inboxConnecting?'connecting':'disconnected');$('status').classList.toggle('ready',ready);$('send').toggleAttribute('disabled',!ready||dmSending);$('message').toggleAttribute('disabled',!ready);$('message').setAttribute('placeholder',t(ready?'messagePlaceholder':'messageDisabled'));$('attach').hidden=true;$('resume-work').hidden=true;}else $('attach').hidden=false;
 }
 function renderRooms(){
+ renderDirectRooms();
  const list=$('room-list');list.replaceChildren();$('room-count').textContent=String(session.rooms.length);
  if(!session.rooms.length){const p=document.createElement('p');p.className='footnote';p.textContent=t('noRooms');list.append(p);return;}
  for(const saved of session.rooms){
@@ -259,14 +300,14 @@ function renderRooms(){
  }
 }
 function renderMessages(){
- const log=$('messages'),restore=preserveScroll(log);log.replaceChildren();const messages=active?histories.get(roomId(active.room))||[]:[];
- if(!messages.length){const empty=document.createElement('div');empty.className='empty';empty.innerHTML='<div class="room-art"><span>✳</span><i></i><i></i></div><h3></h3><p></p><span class="pill"></span><div class="sssp-blueprint" aria-hidden="true"><img src="/sssp-vtol.svg" alt=""/><span>SSSP / VTOL–01</span></div>';empty.querySelector('h3')!.textContent=t(session.theme==='sssp'?'patrolEmpty':'emptyHeading');empty.querySelector('p')!.textContent=t(active?'emptyRoom':'emptyText');empty.querySelector('.pill')!.textContent=t('emptyPill');if(!active){const button=document.createElement('button');button.className='primary welcome-action';button.textContent=t('newRoom');button.onclick=openNew;empty.append(button);}log.append(empty);return;}
+ const log=$('messages'),restore=preserveScroll(log);log.replaceChildren();const messages:ChatEntry[]=activeDM?directHistories.get(activeDM)||[]:active?histories.get(roomId(active.room))||[]:[];
+ if(!messages.length){const empty=document.createElement('div');empty.className='empty';empty.innerHTML='<div class="room-art"><span>✳</span><i></i><i></i></div><h3></h3><p></p><span class="pill"></span><div class="sssp-blueprint" aria-hidden="true"><img src="/sssp-vtol.svg" alt=""/><span>SSSP / VTOL–01</span></div>';empty.querySelector('h3')!.textContent=t(session.theme==='sssp'?'patrolEmpty':'emptyHeading');empty.querySelector('p')!.textContent=activeDM?t('dmEmpty'):t(active?'emptyRoom':'emptyText');empty.querySelector('.pill')!.textContent=t('emptyPill');if(!active&&!activeDM){const button=document.createElement('button');button.className='primary welcome-action';button.textContent=t('newRoom');button.onclick=openNew;empty.append(button);}log.append(empty);return;}
  for(const m of messages){
   if(m.nameChange){const change=document.createElement('p');change.className='name-change';change.dataset.message=m.id+'-name';const fallback=t('visitor',{id:m.sender.slice(0,8)});change.textContent=t('nameChanged',{from:m.nameChange.from||fallback,to:m.nameChange.to||fallback,id:m.sender.slice(0,8)});log.append(change);}
   if(m.kind==='heartbeat')continue;
   const own=m.sender===session.identity.publicKey,row=document.createElement('article');row.className='message-row'+(own?' own':'');row.dataset.message=m.id;
   const meta=document.createElement('div');meta.className='meta';meta.textContent=`${m.nickname?m.nickname+' · '+m.sender.slice(0,8):t('visitor',{id:m.sender.slice(0,8)})}${own?' · '+t('you'):''}  ${new Date(m.time).toLocaleTimeString(session.language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'})}`;
-  row.append(meta);
+  const profile=document.createElement('button');profile.className='sender-profile';profile.textContent=meta.textContent;profile.onclick=()=>openProfile(m.sender,m.nickname);meta.replaceChildren(profile);row.append(meta);
   if(m.kind==='file'&&m.file)row.append(attachmentView(active!.room,m.file,t));else{const bubble=document.createElement('p');bubble.textContent=m.text;row.append(bubble);}
   log.append(row);
  }
@@ -307,7 +348,7 @@ async function disconnect(){
  historyState='idle';renderHistory();
  meshPanel.reset();
  mesh?.leave();mesh?.stop();mesh=undefined;
- generation++;lastHeartbeatAttempt=0;heartbeatFlight=undefined;writeController?.abort();writeController=undefined;writeBusy=false;writePaused=false;controller?.abort();controller=undefined;const old=connection;connection=undefined;active=undefined;busy=false;sending=false;session.activeId=undefined;statusKey='idle';
+ activeDM=undefined;generation++;lastHeartbeatAttempt=0;heartbeatFlight=undefined;writeController?.abort();writeController=undefined;writeBusy=false;writePaused=false;controller?.abort();controller=undefined;const old=connection;connection=undefined;active=undefined;busy=false;sending=false;session.activeId=undefined;statusKey='idle';
  $<HTMLTextAreaElement>('message').value='';save();controls();renderRooms();renderMessages();
  await old?.stop();
 }
@@ -377,24 +418,24 @@ $('resume-work').addEventListener('click',()=>{writePaused=false;void prepareWri
 $('reconnect').addEventListener('click',()=>{if(active)void enter(active);});
 $('copy').addEventListener('click',()=>{if(active)void copyInvitation(active.room);});
 $('clear-session').addEventListener('click',async()=>{
- const persistent=isPersistent();if(!confirm(t(persistent?'clearDeviceConfirm':'clearConfirm')))return;closePanels();await disconnect();if(persistent)await clearDeviceData();
+ const persistent=isPersistent();if(!confirm(t(persistent?'clearDeviceConfirm':'clearConfirm')))return;closePanels();stopInbox();await disconnect();if(persistent)await clearDeviceData();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });
 $('logout').addEventListener('click',async()=>{
- const persistent=isPersistent();if(!confirm(t(persistent?'logoutConfirm':'clearConfirm')))return;closePanels();await disconnect();if(persistent)await logoutPersistent();
+ const persistent=isPersistent();if(!confirm(t(persistent?'logoutConfirm':'clearConfirm')))return;closePanels();stopInbox();await disconnect();if(persistent)await logoutPersistent();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });
 $('clear-device').addEventListener('click',async()=>{
- if(!confirm(t('clearDeviceConfirm')))return;closePanels();await disconnect();await clearDeviceData();
+ if(!confirm(t('clearDeviceConfirm')))return;closePanels();stopInbox();await disconnect();await clearDeviceData();
  try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });
 $('skin').addEventListener('change',()=>{session.theme=$<HTMLSelectElement>('skin').value as 'soft'|'sssp'|'kabutack';save();languageChanged();});
 $('language').addEventListener('change',()=>{session.language=$<HTMLSelectElement>('language').value as Language;save();languageChanged();});
 $('composer').addEventListener('submit',async event=>{
- event.preventDefault();const input=$<HTMLTextAreaElement>('message');if(!active||!connection||sending||!input.value.trim())return;
+ event.preventDefault();const input=$<HTMLTextAreaElement>('message');if(activeDM){await sendDirectInput();return;}if(!active||!connection||sending||!input.value.trim())return;
  if(!canWrite(active)){writePaused=false;void prepareWrite();return;}
  const current=generation,saved=active,body=input.value;sending=true;controls();
  try{await heartbeatFlight;if(current!==generation)return;const packet=seal(saved.room,session.identity,saved.nonce!,body,effectiveName(session.name,saved.nickname),saved.epoch);const stored=await connection.send(packet.payload,true);if(!stored)void backupMessage(roomId(saved.room),packet.payload).catch(()=>{});if(current!==generation)return;addMessage(saved,packet.message);if(input.value===body)input.value='';notice('sent');}
@@ -409,9 +450,9 @@ function checkDay(){
  if(!canWrite(active)){controls();renderRooms();void prepareWrite();}
  else if(!writeBusy&&statusKey!=='connected'){statusKey='connected';controls();renderRooms();}
 }
-setInterval(()=>{mesh?.tick();meshPanel.render();checkDay();void sendHeartbeat();refreshAccountState();if($<HTMLDialogElement>('members-dialog').open)renderMembers();},1000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){mesh?.tick();checkDay();void sendHeartbeat();refreshAccountState(true);}});
+setInterval(()=>{void ensureInbox();if(activeDM)controls();mesh?.tick();meshPanel.render();checkDay();void sendHeartbeat();refreshAccountState();if($<HTMLDialogElement>('members-dialog').open)renderMembers();},1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){void ensureInbox();mesh?.tick();checkDay();void sendHeartbeat();refreshAccountState(true);}});
 window.addEventListener('focus',()=>{checkDay();refreshAccountState(true);});
-languageChanged();save();keepMobileScreenOn();
+languageChanged();save();keepMobileScreenOn();void ensureInbox();
 if(location.hash){const code=location.hash.slice(1);history.replaceState(null,'',location.pathname);try{const room=parseInvite(code);$<HTMLTextAreaElement>('invite-input').value=code;openNew();$('choose-join').click();$('form-feedback').textContent=room.name;}catch{notice('inviteInvalid');}}
 else if(session.activeId){const saved=session.rooms.find(item=>roomId(item.room)===session.activeId);if(saved)void enter(saved);}

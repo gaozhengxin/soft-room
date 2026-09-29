@@ -73,15 +73,15 @@ export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signa
   let sendTail:Promise<unknown>=Promise.resolve(),queued=0;
   const sending=new Set<string>();
   return {
-   async send(payload:Uint8Array,archive=false){
+   async send(payload:Uint8Array,archive=false,target:Room=room){
     if(!connected()||queued>=64)throw Error('Not connected or send queue full');queued++;
     const send=sendTail.then(async()=>{
      if(stopped)throw abortError();
      const candidates=health.available(live()).filter(key=>!sending.has(key)).slice(0,4);
      try{await firstAcknowledged(candidates.map(async key=>{
       const peer=peers.get(key);if(!peer)throw Error('Gateway disconnected');sending.add(key);
-      try{return await bounded(push.send(archive?archiveEncoder:encoder,{payload},peer.id));}catch(error){if(error instanceof Error&&error.message==='Gateway timeout')retire(key,peer.connection);throw error;}finally{sending.delete(key);}
-     }),result=>!!result.success);return false;}catch(error){if(!regionBypassed())throw error;await bounded(pushViaWakuStore(roomId(room),payload),12000);return true;}
+      try{return await bounded(push.send(target===room?(archive?archiveEncoder:encoder):current.createEncoder({contentTopic:topic(target),ephemeral:!archive}),{payload},peer.id));}catch(error){if(error instanceof Error&&error.message==='Gateway timeout')retire(key,peer.connection);throw error;}finally{sending.delete(key);}
+     }),result=>!!result.success);return false;}catch(error){if(!regionBypassed())throw error;await bounded(pushViaWakuStore(roomId(target),payload),12000);return true;}
     });
     sendTail=send.catch(()=>{});try{return await send;}finally{queued--;}
    },

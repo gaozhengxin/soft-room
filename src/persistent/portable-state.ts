@@ -1,8 +1,10 @@
+import {validateContact,type Contact} from '../dm.ts';
 import {ed25519} from '@noble/curves/ed25519.js';
 import {bytesToHex,hexToBytes,randomBytes} from '@noble/hashes/utils.js';
 import {invite,normalizeNickname,parseInvite,roomId,type Identity,type Room} from '../protocol.ts';
 import type {SavedRoom,Session} from '../session.ts';
 
+export const CONTACT_COLLECTION='uk.wakukusmartrecipe.soft.contact';
 export const IDENTITY_COLLECTION='uk.wakukusmartrecipe.soft.identity';
 export const ROOM_COLLECTION='uk.wakukusmartrecipe.soft.room';
 export const IDENTITY_RKEY='self';
@@ -42,7 +44,7 @@ export class PortableStateRepository {
  private key:CryptoKey;private local:RecordStore;private remote?:RecordStore;
  constructor(key:CryptoKey,local:RecordStore,remote?:RecordStore){this.key=key;this.local=local;this.remote=remote;}
  setRemote(remote:RecordStore|undefined){this.remote=remote;}
- async pull(){if(!this.remote)return;for(const collection of [IDENTITY_COLLECTION,ROOM_COLLECTION])for(const record of await this.remote.list(collection)){if(collection===IDENTITY_COLLECTION)restoreIdentity(await decryptState<PortableIdentityState>(this.key,collection,record.rkey,record.value));else restoreRoom(await decryptState<PortableRoomState>(this.key,collection,record.rkey,record.value));await this.local.put(record);}}
+ async pull(){if(!this.remote)return;for(const collection of [IDENTITY_COLLECTION,ROOM_COLLECTION,CONTACT_COLLECTION])for(const record of await this.remote.list(collection)){if(collection===IDENTITY_COLLECTION)restoreIdentity(await decryptState<PortableIdentityState>(this.key,collection,record.rkey,record.value));else if(collection===CONTACT_COLLECTION)validateContact(await decryptState<Contact>(this.key,collection,record.rkey,record.value));else restoreRoom(await decryptState<PortableRoomState>(this.key,collection,record.rkey,record.value));await this.local.put(record);}}
  async saveIdentity(identity:Identity,username?:string){const record={collection:IDENTITY_COLLECTION,rkey:IDENTITY_RKEY,value:await encryptState(this.key,IDENTITY_COLLECTION,IDENTITY_RKEY,identityState(identity,username))};await this.local.put(record);await this.remote?.put(record);}
  async loadIdentity():Promise<Identity|undefined>{const value=await this.local.get(IDENTITY_COLLECTION,IDENTITY_RKEY);return value?restoreIdentity(await decryptState<PortableIdentityState>(this.key,IDENTITY_COLLECTION,IDENTITY_RKEY,value)):undefined;}
  async loadIdentityState(){const value=await this.local.get(IDENTITY_COLLECTION,IDENTITY_RKEY);return value?restoreIdentityState(await decryptState<PortableIdentityState>(this.key,IDENTITY_COLLECTION,IDENTITY_RKEY,value)):undefined;}
@@ -50,5 +52,7 @@ export class PortableStateRepository {
  async saveRoom(saved:SavedRoom){const id=roomId(saved.room),existing=(await this.roomRecords()).find(item=>item.state.roomId===id),rkey=existing?.record.rkey||randomRkey();const record={collection:ROOM_COLLECTION,rkey,value:await encryptState(this.key,ROOM_COLLECTION,rkey,roomState(saved))};await this.local.put(record);await this.remote?.put(record);}
  async loadRooms(){const rooms:SavedRoom[]=[],seen=new Set<string>();for(const {state} of await this.roomRecords()){if(seen.has(state.roomId))continue;seen.add(state.roomId);rooms.push(restoreRoom(state));}return rooms;}
  async deleteRoom(id:string){for(const {record,state} of await this.roomRecords())if(state.roomId===id){await this.local.delete(ROOM_COLLECTION,record.rkey);await this.remote?.delete(ROOM_COLLECTION,record.rkey);}}
- async restore(language:'zh'|'en'):Promise<Session|undefined>{const saved=await this.loadIdentityState();if(!saved)return;return {identity:saved.identity,...(saved.username?{name:saved.username}:{}),rooms:await this.loadRooms(),language};}
+ async loadContacts(){const contacts:Contact[]=[];for(const record of await this.local.list(CONTACT_COLLECTION)){const contact=validateContact(await decryptState<Contact>(this.key,CONTACT_COLLECTION,record.rkey,record.value));if(!contacts.some(c=>c.publicKey===contact.publicKey))contacts.push(contact);}return contacts.slice(0,100);}
+ async saveContacts(contacts:Contact[]){const records=await this.local.list(CONTACT_COLLECTION),known=new Map<string,StoredRecord>();for(const record of records){const contact=validateContact(await decryptState<Contact>(this.key,CONTACT_COLLECTION,record.rkey,record.value));known.set(contact.publicKey,record);}for(const contact of contacts.slice(0,100)){const checked=validateContact(contact),rkey=known.get(checked.publicKey)?.rkey||randomRkey(),record={collection:CONTACT_COLLECTION,rkey,value:await encryptState(this.key,CONTACT_COLLECTION,rkey,checked)};await this.local.put(record);await this.remote?.put(record);}}
+ async restore(language:'zh'|'en'):Promise<Session|undefined>{const saved=await this.loadIdentityState();if(!saved)return;return {identity:saved.identity,...(saved.username?{name:saved.username}:{}),contacts:await this.loadContacts(),rooms:await this.loadRooms(),language};}
 }

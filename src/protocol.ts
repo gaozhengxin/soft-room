@@ -5,7 +5,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
 const utf8 = new TextEncoder();
 const text = new TextDecoder('utf-8', { fatal: true });
-export type Room = { v: 1 | 2; key: string; seed?: string; name: string; pow: 0 | 16 | 20 | 1000 };
+export type Room = { inbox?: string; v: 1 | 2; key: string; seed?: string; name: string; pow: 0 | 16 | 20 | 1000 };
 export type Identity = { secret: Uint8Array; publicKey: string };
 export type AttachmentRef={id:string;size:number;storage:'logos';cipherSha256:string};
 export type Attachment={v:1;name:string;mime:string;bytes:number;media:'image'|'video'|'audio'|'pdf'|'markdown'|'file';quality:'original'|'balanced'|'compact';original:AttachmentRef;preview?:(AttachmentRef&{mime:string})};
@@ -31,7 +31,7 @@ export function parseInvite(value: string): Room {
   } catch { throw Error('邀请码无效或不完整。'); }
 }
 // Commitment binds the secret, room name and work requirement. Lowering PoW creates a different room.
-export const roomId = (r: Room) => bytesToHex(sha256(utf8.encode(JSON.stringify(r.v===2?['soft-room/v2',r.seed,r.name,r.pow]:['soft-room/v1', r.key, r.name, r.pow]))));
+export const roomId = (r: Room) => r.inbox || bytesToHex(sha256(utf8.encode(JSON.stringify(r.v===2?['soft-room/v2',r.seed,r.name,r.pow]:['soft-room/v1', r.key, r.name, r.pow]))));
 export const topic = (r: Room) => `/soft-room/1/${roomId(r)}/json`;
 // 48-bit target gives 1000.000069x the legacy 16-bit difficulty (integer rounding only).
 export const STRONG_TARGET = Math.floor(2 ** 48 / (65536 * 1000));

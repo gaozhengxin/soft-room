@@ -38,7 +38,7 @@ test('deleting one persisted room leaves unrelated rooms intact',async()=>{
  assert.deepEqual((await repo.loadRooms()).map(item=>item.room.name),['B']);
 });
 test('tampered ciphertext and unsupported envelope versions fail clearly',async()=>{
- const key=await generateMasterKey(),record=await encryptState(key,IDENTITY_COLLECTION,IDENTITY_RKEY,{version:1,wakuPrivateKey:'1'.repeat(64)}),tampered={...record,ciphertext:record.ciphertext.slice(0,-1)+(record.ciphertext.endsWith('A')?'B':'A')};
+ const key=await generateMasterKey(),record=await encryptState(key,IDENTITY_COLLECTION,IDENTITY_RKEY,{version:1,wakuPrivateKey:'1'.repeat(64)}),tampered={...record,ciphertext:(record.ciphertext.startsWith('A')?'B':'A')+record.ciphertext.slice(1)};
  await assert.rejects(decryptState(key,IDENTITY_COLLECTION,IDENTITY_RKEY,tampered),/authenticated/);
  await assert.rejects(decryptState(key,IDENTITY_COLLECTION,IDENTITY_RKEY,{...record,version:2} as unknown as EncryptedRecord),/Unsupported/);
 });
@@ -50,7 +50,7 @@ test('PDS failure cannot corrupt the local Waku identity',async()=>{
  assert.equal((await repo.loadIdentity())?.publicKey,identity.publicKey);
 });
 test('tampered remote state is rejected before it can replace a valid local identity',async()=>{
- const key=await generateMasterKey(),local=new MemoryStore(),remote=new MemoryStore(),identity=makeIdentity(),repo=new PortableStateRepository(key,local);await repo.saveIdentity(identity);const valid=await local.get(IDENTITY_COLLECTION,IDENTITY_RKEY);assert.ok(valid);await remote.put({collection:IDENTITY_COLLECTION,rkey:IDENTITY_RKEY,value:{...valid,ciphertext:valid.ciphertext.slice(0,-1)+(valid.ciphertext.endsWith('A')?'B':'A')}});repo.setRemote(remote);await assert.rejects(repo.pull(),/authenticated/);assert.equal((await repo.loadIdentity())?.publicKey,identity.publicKey);
+ const key=await generateMasterKey(),local=new MemoryStore(),remote=new MemoryStore(),identity=makeIdentity(),repo=new PortableStateRepository(key,local);await repo.saveIdentity(identity);const valid=await local.get(IDENTITY_COLLECTION,IDENTITY_RKEY);assert.ok(valid);await remote.put({collection:IDENTITY_COLLECTION,rkey:IDENTITY_RKEY,value:{...valid,ciphertext:(valid.ciphertext.startsWith('A')?'B':'A')+valid.ciphertext.slice(1)}});repo.setRemote(remote);await assert.rejects(repo.pull(),/authenticated/);assert.equal((await repo.loadIdentity())?.publicKey,identity.publicKey);
 });
 test('detaching an expired account session never deletes local cryptographic state',async()=>{
  const key=await generateMasterKey(),local=new MemoryStore(),remote=new MemoryStore(),repo=new PortableStateRepository(key,local,remote),identity=makeIdentity();await repo.saveIdentity(identity);repo.setRemote(undefined);

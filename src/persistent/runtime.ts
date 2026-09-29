@@ -3,7 +3,7 @@ import {normalizeNickname} from '../protocol.ts';
 import type {AtpSessionData} from '@atproto/api';
 import {resumeAccount,signInAccount,type AccountLogin,type SignedInAccount} from './atproto-account.ts';
 import {IndexedDbMasterKeys,IndexedDbRecordStore,openPrivateDatabase} from './indexed-db.ts';
-import {IDENTITY_COLLECTION,IDENTITY_RKEY,PortableStateRepository,ROOM_COLLECTION,type RecordStore,type StoredRecord} from './portable-state.ts';
+import {CONTACT_COLLECTION,IDENTITY_COLLECTION,IDENTITY_RKEY,PortableStateRepository,ROOM_COLLECTION,type RecordStore,type StoredRecord} from './portable-state.ts';
 import {createRecoveryBundle,parseRecoveryFile,recoveryFile,recoverMasterKey} from './recovery.ts';
 
 export type PersistentProfile={id:string;label:string;pds:string};
@@ -32,10 +32,10 @@ class StagingStore implements RecordStore {
  async put(record:StoredRecord){this.records.set(this.id(record.collection,record.rkey),structuredClone(record));}
  async delete(collection:string,rkey:string){this.records.delete(this.id(collection,rkey));}
 }
-async function stageSession(key:CryptoKey,session:Session){const store=new StagingStore(),repository=new PortableStateRepository(key,store);await repository.saveIdentity(session.identity,session.name);for(const room of session.rooms)await repository.saveRoom(room);return [...store.records.values()];}
+async function stageSession(key:CryptoKey,session:Session){const store=new StagingStore(),repository=new PortableStateRepository(key,store);await repository.saveIdentity(session.identity,session.name);await repository.saveContacts(session.contacts||[]);for(const room of session.rooms)await repository.saveRoom(room);return [...store.records.values()];}
 async function replaceRemote(account:SignedInAccount,records:StoredRecord[]){
- const oldRooms=await account.records.list(ROOM_COLLECTION),identity=records.find(record=>record.collection===IDENTITY_COLLECTION&&record.rkey===IDENTITY_RKEY),rooms=records.filter(record=>record.collection===ROOM_COLLECTION);if(!identity)throw Error('Persistent identity unavailable');
- await account.records.put(identity);for(const room of rooms)await account.records.put(room);const keep=new Set(rooms.map(room=>room.rkey));for(const old of oldRooms)if(!keep.has(old.rkey))await account.records.delete(ROOM_COLLECTION,old.rkey);
+ const oldContacts=await account.records.list(CONTACT_COLLECTION);const oldRooms=await account.records.list(ROOM_COLLECTION),identity=records.find(record=>record.collection===IDENTITY_COLLECTION&&record.rkey===IDENTITY_RKEY),rooms=records.filter(record=>record.collection===ROOM_COLLECTION);if(!identity)throw Error('Persistent identity unavailable');
+ const keepContacts=new Set(records.filter(r=>r.collection===CONTACT_COLLECTION).map(r=>r.rkey));for(const old of oldContacts)if(!keepContacts.has(old.rkey))await account.records.delete(CONTACT_COLLECTION,old.rkey);await account.records.put(identity);for(const contact of records.filter(record=>record.collection===CONTACT_COLLECTION))await account.records.put(contact);for(const room of rooms)await account.records.put(room);const keep=new Set(rooms.map(room=>room.rkey));for(const old of oldRooms)if(!keep.has(old.rkey))await account.records.delete(ROOM_COLLECTION,old.rkey);
 }
 async function installRecovery(account:SignedInAccount,session:Session,keys:IndexedDbMasterKeys,local:IndexedDbRecordStore,id:string){
  const bundle=await createRecoveryBundle(account.did),records=await stageSession(bundle.key,session);await replaceRemote(account,records);await local.replace(records);await keys.put(id,bundle.key);await keys.putRecovery(id,bundle.code,bundle.record);await account.recovery.put(bundle.record);return {repository:new PortableStateRepository(bundle.key,local,account.records),code:bundle.code};
@@ -78,7 +78,7 @@ export async function loginPersistent(input:PersistentAccountLogin,language:'zh'
 
  await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);await activateAccount(storedKey,repository);return {session:restored};
 }
-export async function persistSessionState(session:Session){if(!current)return;await current.repository.saveIdentity(session.identity,session.name);for(const saved of session.rooms)await current.repository.saveRoom(saved);}
+export async function persistSessionState(session:Session){if(!current)return;await current.repository.saveIdentity(session.identity,session.name);await current.repository.saveContacts(session.contacts||[]);for(const saved of session.rooms)await current.repository.saveRoom(saved);}
 export async function refreshPersistentState(language:'zh'|'en'){if(!current)return;await current.repository.pull();return current.repository.restore(language);}
 export async function deleteSavedRoom(id:string){await current?.repository.deleteRoom(id);}
 export async function exportRecoveryFile(){if(!current)return;const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),code=await keys.getRecoveryCode(current.profile.id);return code?recoveryFile(current.profile.id,code):undefined;}
