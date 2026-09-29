@@ -1,3 +1,4 @@
+import type {Contact} from '../dm.ts';
 import {freshSession,type Session} from '../session.ts';
 import {normalizeNickname} from '../protocol.ts';
 import type {AtpSessionData} from '@atproto/api';
@@ -79,7 +80,9 @@ export async function loginPersistent(input:PersistentAccountLogin,language:'zh'
  await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);await activateAccount(storedKey,repository);return {session:restored};
 }
 export async function persistSessionState(session:Session){if(!current)return;await current.repository.saveIdentity(session.identity,session.name);await current.repository.saveContacts(session.contacts||[]);for(const saved of session.rooms)await current.repository.saveRoom(saved);}
-export async function refreshPersistentState(language:'zh'|'en'){if(!current)return;await current.repository.pull();return current.repository.restore(language);}
+export async function refreshPersistentState(language:'zh'|'en'){if(!current)return;await current.repository.pull();const restored=await current.repository.restore(language);return restored?{...restored,deletedContacts:await current.repository.deletedContacts()}:undefined;}
+export async function saveSavedContact(contact:Contact){await current?.repository.saveContact(contact);}
+export async function deleteSavedContact(publicKey:string){await current?.repository.deleteContact(publicKey);}
 export async function deleteSavedRoom(id:string){await current?.repository.deleteRoom(id);}
 export async function exportRecoveryFile(){if(!current)return;const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),code=await keys.getRecoveryCode(current.profile.id);return code?recoveryFile(current.profile.id,code):undefined;}
 export async function logoutPersistent(){const id=current?.profile.id||activeProfileId(),account=current?.account;chooseTemporary();if(id){try{await account?.session.logout();}catch{}try{const db=await openPrivateDatabase();await new IndexedDbMasterKeys(db).deleteAccountSession(id);db.close();}catch{}}}

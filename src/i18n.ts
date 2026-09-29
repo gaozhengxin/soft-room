@@ -1,4 +1,5 @@
 export const zh = {
+ dmDelete:'删除联系人',dmContactSyncPending:'已保存在本机，云端同步暂未完成。',
  reorderRoom:'调整顺序',
 dmRooms:"一对一 · DM",dmAdd:"添加联系人",dmProfile:"用户资料",dmProfileHint:"公钥标识此用户；昵称由用户自行设置。",dmSave:"保存联系人",dmSaved:"已保存联系人",dmMessage:"发消息",dmAddress:"Inbox 地址或用户公钥",dmMyInbox:"我的 Inbox",dmInvalid:"请输入其他用户的有效 Inbox 地址或公钥。",dmLimit:"最多保存 100 位联系人。",dmContact:"联系人",dmNew:"未保存的联系人",dmNoContacts:"点击房间中的用户，开始一对一聊天。",dmListening:"Inbox 正在接收",dmConnecting:"Inbox 连接中…",dmRetrying:"Inbox 正在重试…",dmEmpty:"消息会加密发送至对方 Inbox；回复会在这里显示。",sidebarResize:"拖动调整侧栏宽度",
  channelOn:'开启 · ON',channelOff:'关闭 · OFF',channelSwitchOff:'关闭频道',channelSwitchOn:'开启频道',channelClosed:'创建人已关闭频道，连接已停止。',channelNotJoined:'尚未加入此频道。',
@@ -73,6 +74,7 @@ dmRooms:"一对一 · DM",dmAdd:"添加联系人",dmProfile:"用户资料",dmPro
  } as const;
 export type TextKey=keyof typeof zh;
 export const en:Record<TextKey,string> = {
+ dmDelete:'Delete contact',dmContactSyncPending:'Saved on this device. Cloud sync is still pending.',
  reorderRoom:'Reorder',
 dmRooms:"Direct messages",dmAdd:"Add contact",dmProfile:"User profile",dmProfileHint:"The public key identifies this user. Names are self-chosen.",dmSave:"Save contact",dmSaved:"Contact saved",dmMessage:"Message",dmAddress:"Inbox address or public key",dmMyInbox:"My Inbox",dmInvalid:"Enter another user\u2019s valid Inbox address or public key.",dmLimit:"You can save up to 100 contacts.",dmContact:"Saved contact",dmNew:"Unsaved contact",dmNoContacts:"Select someone in a room to start a direct message.",dmListening:"Inbox listening",dmConnecting:"Connecting Inbox\u2026",dmRetrying:"Retrying Inbox\u2026",dmEmpty:"Messages are encrypted to their Inbox. Replies appear here.",sidebarResize:"Drag to resize sidebar",
  channelOn:'Open · ON',channelOff:'Closed · OFF',channelSwitchOff:'Turn channel off',channelSwitchOn:'Turn channel on',channelClosed:'The creator has closed this channel. Connections have stopped.',channelNotJoined:'You have not joined this channel.',
