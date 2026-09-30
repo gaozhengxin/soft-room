@@ -49,3 +49,10 @@ test('DM supports authenticated file references, presence and two-person channel
  assert.throws(()=>sealDirect(a,b.publicKey,'','',{kind:'heartbeat',channels:[createNetwork(pair,outsider,'Impostor')]}));
  assert.throws(()=>sealDirect(a,b.publicKey,'','',{kind:'heartbeat',channels:[createNetwork('0'.repeat(64),a,'Wrong pair')]}));
 });
+
+test('DM attachment routing binds to its signed recipient inbox without revealing the shared encryption key',async()=>{
+ const {directRoom}=await import('../src/dm.ts'),{seal,open}=await import('../src/protocol.ts');
+ const a=makeIdentity(),b=makeIdentity(),ab={...directRoom(a,b.publicKey),inbox:b.publicKey},ba={...directRoom(b,a.publicKey),inbox:b.publicKey};
+ assert.equal(roomId(ab),b.publicKey);assert.equal(ab.key,ba.key);
+ const packet=seal(ab,a,0,'attachment encryption context');assert.equal(open(ba,packet.payload).text,'attachment encryption context');assert.throws(()=>open({...ba,inbox:a.publicKey},packet.payload));
+});

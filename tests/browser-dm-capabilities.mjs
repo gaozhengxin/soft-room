@@ -16,7 +16,7 @@ if(process.env.DM_MOCK_STORAGE){
  for(const context of contexts)await context.route('**/api/storage/v1/data**',async route=>{
   const request=route.request();if(request.method()==='OPTIONS')return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-headers':'*'}});
   const headers={'access-control-allow-origin':'*'};
-  if(request.method()==='POST'){const body=request.postDataBuffer(),id='testattachment'+String(++sequence).padStart(20,'0');assert(body&&body[0]===1);assert(!body.includes(Buffer.from('Hello Bob')));objects.set(id,body);return route.fulfill({status:200,headers,body:id});}
+  if(request.method()==='POST'){assert.equal(request.headers()['x-soft-room-id'],identities[1].publicKey);const body=request.postDataBuffer(),id='testattachment'+String(++sequence).padStart(20,'0');assert(body&&body[0]===1);assert(!body.includes(Buffer.from('Hello Bob')));objects.set(id,body);return route.fulfill({status:200,headers,body:id});}
   const id=new URL(request.url()).pathname.split('/')[5],body=objects.get(id);return route.fulfill({status:body?200:404,headers,body:body||'Not found'});
  });
 }
