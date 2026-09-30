@@ -56,3 +56,12 @@ test('detaching an expired account session never deletes local cryptographic sta
  const key=await generateMasterKey(),local=new MemoryStore(),remote=new MemoryStore(),repo=new PortableStateRepository(key,local,remote),identity=makeIdentity();await repo.saveIdentity(identity);repo.setRemote(undefined);
  assert.equal((await repo.loadIdentity())?.publicKey,identity.publicKey);assert.ok(await local.get(IDENTITY_COLLECTION,IDENTITY_RKEY));
 });
+
+test('encrypted conversation archive merges reading and filters across devices and retries offline state',async()=>{
+ const {emptyConversation}=await import('../src/conversation-state.ts');const {CONVERSATION_COLLECTION}=await import('../src/persistent/portable-state.ts');
+ class SwitchStore extends MemoryStore{offline=false;override async put(r:StoredRecord){if(this.offline)throw Error('Offline');await super.put(r);}}
+ const key=await generateMasterKey(),remote=new SwitchStore(),localA=new MemoryStore(),a=new PortableStateRepository(key,localA,remote),b=new PortableStateRepository(key,new MemoryStore(),remote),id='dm:'+'a'.repeat(64),base=emptyConversation(id);
+ await a.saveConversation(base);await b.pull();await a.saveConversation({...base,rulesAt:10,blocked:['b'.repeat(64)]});await b.saveConversation({...base,readAt:20,seen:['c'.repeat(32)]});await a.pull();await b.pull();
+ const state=(await b.loadConversations())[0];assert.deepEqual(state.blocked,['b'.repeat(64)]);assert.deepEqual(state.seen,['c'.repeat(32)]);assert(!JSON.stringify(await remote.list(CONVERSATION_COLLECTION)).includes(id));
+ remote.offline=true;await assert.rejects(a.saveConversation({...state,rulesAt:40,since:123}));remote.offline=false;await new PortableStateRepository(key,localA,remote).pull();await b.pull();assert.equal((await b.loadConversations())[0].since,123);
+});

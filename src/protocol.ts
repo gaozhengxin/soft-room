@@ -108,7 +108,7 @@ function decodeMessage(r: Room, payload: Uint8Array, now: number, historical:boo
   const envelope = JSON.parse(text.decode(plain));
   if (typeof envelope.body !== 'string' || !/^[a-f0-9]{128}$/.test(envelope.signature)) throw Error('Invalid envelope');
   const m = JSON.parse(envelope.body) as Message;
-  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || (m.kind!=='heartbeat'&&m.kind!=='file'&&!m.text.trim()) || m.text.length > (m.kind==='mesh'?12000:2000) || !Number.isSafeInteger(m.time) || (historical ? now-m.time>HISTORY_WINDOW || m.time-now>5000 || ![undefined,'file'].includes(m.kind) : Math.abs(now-m.time)>300000)) throw Error('Invalid message');
+  if (m.v !== 1 || m.room !== roomId(r) || !/^[a-f0-9]{32}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sender) || typeof m.text !== 'string' || (m.kind!=='heartbeat'&&m.kind!=='file'&&!m.text.trim()) || m.text.length > (m.kind==='mesh'?12000:2000) || !Number.isSafeInteger(m.time) || (historical ? m.time-now>5000 || ![undefined,'file'].includes(m.kind) : Math.abs(now-m.time)>300000)) throw Error('Invalid message');
   if(m.kind!==undefined&&m.kind!=='heartbeat'&&m.kind!=='mesh'&&m.kind!=='file')throw Error('Invalid kind');
   if(m.kind==='file'&&(m.text!==''||!validAttachment(m.file)))throw Error('Invalid file');
   if(m.kind!=='file'&&m.file!==undefined)throw Error('Invalid file');

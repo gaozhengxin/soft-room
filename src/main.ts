@@ -1,3 +1,5 @@
+import {mountConversationTools} from './conversation-ui.ts';
+import {BackgroundQueue,emptyConversation,validateConversation,mergeConversations,visibleMessage,compareMessages,nearestMessage,searchMessages,sealConversations,openConversations,type ConversationState,type ReadingPosition} from './conversation-state.ts';
 import {encodePublicProfile} from './public-profile.ts';
 import {loadSidebarOrder,saveSidebarOrder,orderSidebarIds,sortableSidebar} from './sidebar-order.ts';
 import {inboxId,inboxRoom,directRoom,sealDirect,openDirect,type Contact,type DirectMessage,type DirectContent} from './dm.ts';
@@ -26,7 +28,7 @@ import {effectiveName,type ChatEntry} from './names.ts';
 import { dayEpoch, normalizeNickname, makeRoom, invite, parseInvite, roomId, validWork, seal, open, openHistory, type Room, type Message } from './protocol.ts';
 import { computeReadKey, computeWork, type WorkProgress } from './pow.ts';
 import { loadSession, saveSession, freshSession, encodeSession, decodeSession, SESSION_KEY, type SavedRoom } from './session.ts';
-import {activeProfile,clearDeviceData,deleteSavedContact,saveSavedContact,deleteSavedRoom,exportRecoveryFile,isPersistent,logoutPersistent,persistSessionState,recoveryPending,refreshPersistentState} from './persistent/runtime.ts';
+import {resetRecoveryFile,activeProfile,clearDeviceData,deleteSavedContact,saveSavedContact,deleteSavedRoom,exportRecoveryFile,isPersistent,logoutPersistent,persistSessionState,recoveryPending,refreshPersistentState} from './persistent/runtime.ts';
 import {saveNativeFileDetailed} from './native-files.ts';
 import { translate, type TextKey, type Language } from './i18n.ts';
 import {observeMember,online,HEARTBEAT_INTERVAL,type Member} from './members.ts';
@@ -39,6 +41,20 @@ let storage:Storage|undefined;
 try {storage=window.sessionStorage;} catch { /* Memory-only fallback. */ }
 const loaded=loadSession(storage,browserLanguage(navigator.languages?.length?navigator.languages:[navigator.language]));
 let session=loaded.session,cacheFailed=loaded.failed;
+const stateStorageKey='soft-room/conversations/'+session.identity.publicKey;
+try{const raw=localStorage.getItem(stateStorageKey);if(raw)session.states=mergeConversations(session.states||[],openConversations(session.identity,raw));}catch{}
+const queue=new BackgroundQueue(),unreadRooms=new Set<string>();let backgroundBusy=false,backgroundAbort:AbortController|undefined,inboxHistoryFlight:Promise<void>|undefined;
+let searchQuery='',pendingPosition:ReadingPosition|undefined,positionTimer=0,stateSaveTimer=0;
+const currentConversation=()=>activeDM?'dm:'+activeDM:active?'room:'+roomId(active.room):undefined;
+function conversationState(id:string){session.states??=[];let state=session.states.find(s=>s.id===id);if(!state){state=emptyConversation(id);session.states.push(state);window.clearTimeout(stateSaveTimer);stateSaveTimer=window.setTimeout(()=>save(),1000);}return state;}
+function noteUnread(id:string,message:Message){const state=conversationState(id);if(message.sender!==session.identity.publicKey&&visibleMessage(message,state)&&!state.seen.includes(message.id)&&!["heartbeat","mesh"].includes(message.kind||''))unreadRooms.add(id);}
+function currentMessages():Message[]{return activeDM?directHistories.get(activeDM)||[]:active?histories.get(roomId(active.room))||[]:[];}
+function captureReadingPosition(){const id=currentConversation();if(!id||pendingPosition||searchQuery||document.hidden)return;const log=$('messages'),rect=log.getBoundingClientRect(),rows=[...log.querySelectorAll<HTMLElement>('article[data-message]')].filter(row=>row.getBoundingClientRect().bottom>rect.top&&row.getBoundingClientRect().top<rect.bottom);if(!rows.length)return;const message=currentMessages().find(m=>m.id===rows[0].dataset.message);if(!message)return;const state=conversationState(id),ids=rows.map(row=>row.dataset.message!),seen=[...new Set([...state.seen,...ids])].slice(-512);state.position={id:message.id,sender:message.sender,time:message.time,offset:rows[0].getBoundingClientRect().top-rect.top,updatedAt:Date.now()};state.seen=seen;state.readAt=Date.now();if(currentMessages().filter(m=>visibleMessage(m,state)&&!['heartbeat','mesh'].includes(m.kind||'')).every(m=>state.seen.includes(m.id)||m.sender===session.identity.publicKey))unreadRooms.delete(id);save();renderRooms();}
+function deferReadingSave(){window.clearTimeout(positionTimer);positionTimer=window.setTimeout(captureReadingPosition,700);}
+function beginConversation(id:string){searchQuery='';pendingPosition=conversationState(id).position;queue.defer(id.startsWith('dm:')?'inbox':id);conversationTools?.clear();}
+function restoreReadingPosition(){if(!pendingPosition||searchQuery)return;const id=currentConversation();if(!id)return;const messages=currentMessages().filter(m=>visibleMessage(m,conversationState(id))).sort(compareMessages),target=nearestMessage(messages,pendingPosition);if(!target)return;const row=$('messages').querySelector<HTMLElement>(`article[data-message="${target.id}"]`);if(row)$('messages').scrollTop+=row.getBoundingClientRect().top-$('messages').getBoundingClientRect().top-pendingPosition.offset;}
+let conversationTools:ReturnType<typeof mountConversationTools>|undefined;
+
 const iceProvider=createIceProvider(import.meta.env.VITE_TURN_CREDENTIALS_URL,fetch,Date.now,()=>session.identity,()=>meshPanel.render(),storage);
 session.theme ??= 'soft';
 const t=(key:TextKey,params:Record<string,string|number>={})=>translate(session.language,key,params);
@@ -59,11 +75,11 @@ let writeController:AbortController|undefined,writeBusy=false,writePaused=false;
 let progress:WorkProgress={attempts:0,elapsed:0};
 let persistentTimer=0,persistentDirty=false,persistentFlight=Promise.resolve();
 function flushPersistentState(){if(!persistentDirty||!isPersistent())return persistentFlight;persistentDirty=false;const snapshot=decodeSession(encodeSession(session));persistentFlight=persistentFlight.then(()=>persistSessionState(snapshot)).catch(()=>{persistentDirty=true;});return persistentFlight;}
-const save=()=>{cacheFailed=!saveSession(storage,session);renderCache();if(isPersistent()){persistentDirty=true;window.clearTimeout(persistentTimer);persistentTimer=window.setTimeout(()=>{persistentTimer=0;void flushPersistentState();},250);}};
+const save=()=>{let stateFailed=false;try{localStorage.setItem(stateStorageKey,sealConversations(session.identity,session.states||[]));}catch{stateFailed=true;}cacheFailed=!saveSession(storage,session)||stateFailed;renderCache();if(isPersistent()){persistentDirty=true;window.clearTimeout(persistentTimer);persistentTimer=window.setTimeout(()=>{persistentTimer=0;void flushPersistentState();},250);}};
 const PERSISTENT_SYNC_INTERVAL=4_000;
 let contactMutation=false;
 let persistentRefresh:Promise<void>|undefined,lastPersistentRefresh=Date.now();
-function refreshAccountState(force=false){if(contactMutation||!isPersistent()||persistentRefresh||(!force&&Date.now()-lastPersistentRefresh<PERSISTENT_SYNC_INTERVAL))return;lastPersistentRefresh=Date.now();persistentRefresh=(async()=>{try{if(persistentTimer){window.clearTimeout(persistentTimer);persistentTimer=0;}await flushPersistentState();const restored=await refreshPersistentState(session.language);if(!restored||restored.identity.publicKey!==session.identity.publicKey)return;let contactsChanged=false;for(const key of restored.deletedContacts){if(session.contacts?.some(c=>c.publicKey===key)){session.contacts=session.contacts.filter(c=>c.publicKey!==key);directPeers.delete(key);directUnread.delete(key);contactsChanged=true;}}for(const contact of restored.contacts||[])if(!(session.contacts||[]).some(c=>c.publicKey===contact.publicKey)&&(session.contacts?.length||0)<100){(session.contacts??=[]).push(contact);contactsChanged=true;}if(!contactsChanged&&restored.name===session.name)return;if(restored.name)session.name=restored.name;else delete session.name;cacheFailed=!saveSession(storage,session);languageChanged();}catch{ /* Keep the last local state while the PDS is unavailable. */ }finally{persistentRefresh=undefined;}})();}
+function refreshAccountState(force=false){if(contactMutation||!isPersistent()||persistentRefresh||(!force&&Date.now()-lastPersistentRefresh<PERSISTENT_SYNC_INTERVAL))return;lastPersistentRefresh=Date.now();persistentRefresh=(async()=>{try{if(persistentTimer){window.clearTimeout(persistentTimer);persistentTimer=0;}await flushPersistentState();const restored=await refreshPersistentState(session.language);if(!restored||restored.identity.publicKey!==session.identity.publicKey)return;let contactsChanged=false;for(const key of restored.deletedContacts){if(session.contacts?.some(c=>c.publicKey===key)){session.contacts=session.contacts.filter(c=>c.publicKey!==key);directPeers.delete(key);directUnread.delete(key);contactsChanged=true;}}for(const contact of restored.contacts||[])if(!(session.contacts||[]).some(c=>c.publicKey===contact.publicKey)&&(session.contacts?.length||0)<100){(session.contacts??=[]).push(contact);contactsChanged=true;}const merged=mergeConversations(session.states||[],restored.states||[]),statesChanged=JSON.stringify(merged)!==JSON.stringify(session.states||[]);session.states=merged;if(!contactsChanged&&!statesChanged&&restored.name===session.name)return;if(restored.name)session.name=restored.name;else delete session.name;cacheFailed=!saveSession(storage,session);languageChanged();}catch{ /* Keep the last local state while the PDS is unavailable. */ }finally{persistentRefresh=undefined;}})();}
 $('app').innerHTML=`<div class="shell">
 <header class="top"><a class="brand" href="/" data-label="home"><span class="mark"><span class="soft-monogram">s<span>r</span></span><img class="sssp-emblem" src="/sssp-emblem.svg" alt=""/></span><span>soft room<small data-i18n="tagline"></small></span></a><div class="top-tools"><div class="identity"><span class="avatar">✳</span><span><small data-i18n="temporaryIdentity"></small><b id="identity"></b></span></div><label class="sr-only" for="skin" data-i18n="skin"></label><select id="skin"><option value="soft" data-i18n="skinSoft"></option><option value="sssp" data-i18n="skinSssp"></option><option value="kabutack" data-i18n="skinKabutack"></option></select><label class="sr-only" for="language" data-i18n="language"></label><select id="language"><option value="zh">中文</option><option value="en">English</option></select></div></header>
 <section class="session-banner"><div><strong id="cache-warning"></strong><p data-i18n="sessionDetail"></p></div><button id="clear-session" data-i18n="clearSession"></button></section>
@@ -187,41 +203,42 @@ async function changeContact(key:string,name:string|undefined,remove:boolean){
  if(contactMutation)return;if(!remove&&(session.contacts?.length||0)>=100){$('profile-feedback').textContent=t('dmLimit');return;}
  contactMutation=true;$<HTMLButtonElement>('profile-save').disabled=true;$<HTMLButtonElement>('profile-delete').disabled=true;let failed=false;
  try{await persistentRefresh;await flushPersistentState();const contact={publicKey:key,...(name?{name}:{})};try{if(remove)await deleteSavedContact(key);else await saveSavedContact(contact);}catch{failed=true;}
- if(remove){session.contacts=(session.contacts||[]).filter(c=>c.publicKey!==key);directPeers.delete(key);directUnread.delete(key);if(activeDM===key)void disconnect();sidebarOrder=sidebarOrder.filter(id=>id!=='dm:'+key);saveSidebarOrder(session.identity,sidebarOrder);}else{session.contacts=(session.contacts||[]).filter(c=>c.publicKey!==key);session.contacts.push(contact);}
+ if(remove){session.contacts=(session.contacts||[]).filter(c=>c.publicKey!==key);directPeers.delete(key);directUnread.delete(key);session.states=session.states?.filter(s=>s.id!=='dm:'+key);if(activeDM===key)void disconnect();sidebarOrder=sidebarOrder.filter(id=>id!=='dm:'+key);saveSidebarOrder(session.identity,sidebarOrder);}else{session.contacts=(session.contacts||[]).filter(c=>c.publicKey!==key);session.contacts.push(contact);}
  save();renderRooms();
  }finally{contactMutation=false;openProfile(key,name);if(failed)$('profile-feedback').textContent=t('dmContactSyncPending');}
 }
 function createChatMesh(room:Room,send:(signal:import('./mesh-wire.ts').MeshSignal)=>Promise<void>){
- const id=roomId(room),catalog=channelMemory.get(id)||new Map<string,Network>();channelMemory.set(id,catalog);
+ const id=roomId(room),savedChannels=currentConversation()?conversationState(currentConversation()!).channels:[],catalog=channelMemory.get(id)||new Map(savedChannels.filter(n=>n.room===id).map(n=>[n.id,n]));for(const n of savedChannels)if(n.room===id&&(!catalog.has(n.id)||(catalog.get(n.id)!.revision??0)<(n.revision??0)))catalog.set(n.id,n);channelMemory.set(id,catalog);
  return new RoomMesh({catalog,iceProvider,cancelIce:()=>iceProvider.cancel(),iceExpires:()=>iceProvider.expires(),turnState:iceProvider.state,room:id,identity:session.identity,send,
-  announce:()=>{lastHeartbeatAttempt=0;void sendHeartbeat();},changed:()=>meshPanel.render()});
+  announce:()=>{rememberChannels();lastHeartbeatAttempt=0;void sendHeartbeat();},changed:()=>{rememberChannels();meshPanel.render();}});
 }
 async function enterDirect(key:string,name?:string){
- closePanels();await disconnect();const current=++generation;activeDM=key;activeDirectRoom=directRoom(session.identity,key);
+ closePanels();await disconnect();const current=++generation;activeDM=key;activeDirectRoom=directRoom(session.identity,key);beginConversation('dm:'+key);
  directPeers.set(key,{publicKey:key,...(name?{name}:{})});directUnread.delete(key);
  mesh=createChatMesh(activeDirectRoom,async signal=>{if(current!==generation||activeDM!==key)throw Error('Room changed');await sendDirectPacket(key,JSON.stringify(signal),{kind:'mesh'});});
  const presence=directPresence.get(key);if(presence&&Date.now()-presence.time<30000)mesh.receive(presence);
- if(mobileLayout.matches)toggleSidebar(false);notice();controls();renderRooms();renderMessages();void ensureInbox();void sendHeartbeat();
+ if(mobileLayout.matches)toggleSidebar(false);notice();controls();renderRooms();renderMessages();void ensureInbox();void loadInboxHistory();void sendHeartbeat();
 }
 function acceptDirect(message:DirectMessage,outgoing=false,historical=false){
  const transient=message.kind==='heartbeat'||message.kind==='mesh';if(historical&&transient)return;
  const token=message.sender+':'+message.id;if(directSeen.has(token))return;directSeen.add(token);if(directSeen.size>20000)directSeen.delete(directSeen.values().next().value!);
  const peer=outgoing?message.recipient:message.sender;if(peer===session.identity.publicKey)return;
  if(transient){
+  if(session.states?.find(s=>s.id==='dm:'+peer)?.blocked.includes(message.sender))return;
   if(!outgoing&&message.kind==='heartbeat'){const old=directPresence.get(peer);if(!old&&directPresence.size>=200)directPresence.delete(directPresence.keys().next().value!);if(!old||message.time>old.time)directPresence.set(peer,message);}
   if(activeDM===peer&&activeDirectRoom){if(!outgoing)mesh?.receive(message);if(message.kind==='heartbeat'){const id=roomId(activeDirectRoom),members=membersByRoom.get(id)||new Map<string,Member>();observeMember(members,message);membersByRoom.set(id,members);}}
   return;
  }
  const messages=directHistories.get(peer)||[];if(messages.some(m=>m.id===message.id&&m.sender===message.sender))return;if(!directPeers.has(peer)&&directPeers.size>=200)return;
  const old=directPeers.get(peer);directPeers.set(peer,{publicKey:peer,...(old?.name?{name:old.name}:{}),...(!outgoing&&message.nickname?{name:message.nickname}:{})});
- messages.push(message);messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));directHistories.set(peer,messages.slice(-1000));
- if(activeDM===peer)renderMessages();else if(!outgoing)directUnread.set(peer,(directUnread.get(peer)||0)+1);renderRooms();
+ messages.push(message);messages.sort(compareMessages);directHistories.set(peer,messages);noteUnread('dm:'+peer,message);
+ if(!historical){if(activeDM===peer)renderMessages();else if(!outgoing)directUnread.set(peer,(directUnread.get(peer)||0)+1);renderRooms();}
 }
-function receiveDirect(payload:Uint8Array,historical=false){try{acceptDirect(openDirect(session.identity,payload),false,historical);}catch{ /* Ignore unauthenticated or expired traffic. */ }}
+function receiveDirect(payload:Uint8Array,historical=false){try{acceptDirect(openDirect(session.identity,payload,Date.now(),historical),false,historical);}catch{ /* Ignore unauthenticated or expired traffic. */ }}
 function stopInbox(){inboxStopped=true;inboxController?.abort();void inboxConnection?.stop();inboxConnection=undefined;}
 async function ensureInbox(){
  if(inboxStopped||inboxConnecting||inboxConnection?.connected()||Date.now()<inboxRetry)return;inboxConnecting=true;inboxController?.abort();const abort=new AbortController();inboxController=abort;renderRooms();
- try{await inboxConnection?.stop();inboxConnection=undefined;const room=inboxRoom(session.identity.publicKey);const next=await connect(room,payload=>receiveDirect(payload),abort.signal);if(abort.signal.aborted){await next.stop();return;}inboxConnection=next;void Promise.allSettled([next.history(page=>page.forEach(payload=>receiveDirect(payload,true))),storageHistory(roomId(room),page=>page.forEach(payload=>receiveDirect(payload,true)),abort.signal)]);}
+ try{await inboxConnection?.stop();inboxConnection=undefined;const room=inboxRoom(session.identity.publicKey);const next=await connect(room,payload=>receiveDirect(payload),abort.signal);if(abort.signal.aborted){await next.stop();return;}inboxConnection=next;if(activeDM)void loadInboxHistory();}
  catch{inboxRetry=Date.now()+10000;}finally{inboxConnecting=false;renderRooms();if(activeDM){controls();void sendHeartbeat();}}
 }
 async function sendDirectPacket(key:string,body:string,content:DirectContent={}){
@@ -325,7 +342,7 @@ function controls(){
  $('room-title').textContent=active?.room.name||t('noRoom');
  $('room-label').textContent=t(active?'privateRoom':'roomEyebrow');
  $('status').textContent=t(statusKey);$('status').classList.toggle('ready',statusKey==='connected');
- renderProgress();
+ renderProgress();conversationTools?.render();
  if(activeDM){$('room-title').textContent=directName(activeDM);$('room-label').textContent='';$('status').textContent=t(ready?'connected':inboxConnecting?'connecting':'disconnected');$('status').classList.toggle('ready',ready);$('resume-work').hidden=true;}
  $('attach').hidden=false;
 }
@@ -338,33 +355,33 @@ function renderRooms(){
   button.onclick=()=>{if(!(current&&(busy||connection?.connected())))void enter(saved);else if(mobileLayout.matches)toggleSidebar(false);};
   const more=document.createElement('details');more.className='room-actions';const summary=document.createElement('summary');summary.textContent='···';summary.setAttribute('aria-label',t('roomInfo'));more.append(summary);
   const copy=document.createElement('button');copy.textContent=t('copy');copy.onclick=()=>{more.open=false;void copyInvitation(saved.room);};const remove=document.createElement('button');remove.textContent=t('remove');remove.onclick=()=>void removeRoom(saved);more.append(copy,remove);
-  row.append(button,more);rows.set('room:'+id,row);
+  row.append(button,more);if(unreadRooms.has('room:'+id)){const dot=document.createElement('span');dot.className='unread-dot';dot.setAttribute('aria-label',session.language==='zh'?'新消息':'New messages');row.append(dot);}rows.set('room:'+id,row);
  }
  const peers=new Map(directPeers);for(const contact of session.contacts||[])peers.set(contact.publicKey,contact);
  for(const [key] of peers){
   const row=document.createElement('article');row.className='saved-room dm-room'+(activeDM===key?' selected':'');const button=document.createElement('button');button.className='room-choice';button.textContent=directName(key);button.title=directName(key);button.onclick=()=>void enterDirect(key);if(activeDM===key)button.setAttribute('aria-current','true');row.append(button);
-  const unread=directUnread.get(key);if(unread){const badge=document.createElement('span');badge.className='unread-count';badge.textContent=String(unread);row.append(badge);}
+  const unread=unreadRooms.has('dm:'+key)?1:0;if(unread){const badge=document.createElement('span');badge.className='unread-count';badge.textContent=String(unread);row.append(badge);}
   const profile=document.createElement('button');profile.className='icon-button room-profile';profile.innerHTML=userIcon;profile.setAttribute('aria-label',t('dmProfile'));profile.onclick=()=>openProfile(key,directName(key));row.append(profile);rows.set('dm:'+key,row);
  }
  for(const [id,row] of rows){row.dataset.sidebarId=id;const handle=document.createElement('button');handle.type='button';handle.className='room-drag';handle.setAttribute('aria-label',t('reorderRoom'));handle.innerHTML='<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 5h.01M8 12h.01M8 19h.01M16 5h.01M16 12h.01M16 19h.01"/></svg>';row.prepend(handle);}
  list.replaceChildren(...orderSidebarIds([...rows.keys()],sidebarOrder).map(id=>rows.get(id)!));
 }
 function renderMessages(){
- const log=$('messages'),restore=preserveScroll(log);log.replaceChildren();const messages:ChatEntry[]=activeDM?directHistories.get(activeDM)||[]:active?histories.get(roomId(active.room))||[]:[];
- if(!messages.length){if(activeDM)return;const empty=document.createElement('div');empty.className='empty';empty.innerHTML='<div class="room-art"><span>✳</span><i></i><i></i></div><h3></h3><p></p><span class="pill"></span><div class="sssp-blueprint" aria-hidden="true"><img src="/sssp-vtol.svg" alt=""/><span>SSSP / VTOL–01</span></div>';empty.querySelector('h3')!.textContent=t(session.theme==='sssp'?'patrolEmpty':'emptyHeading');empty.querySelector('p')!.textContent=activeDM?t('dmEmpty'):t(active?'emptyRoom':'emptyText');empty.querySelector('.pill')!.textContent=t('emptyPill');if(!active&&!activeDM){const button=document.createElement('button');button.className='primary welcome-action';button.textContent=t('newRoom');button.onclick=openNew;empty.append(button);}log.append(empty);return;}
+ const log=$('messages'),restore=preserveScroll(log);log.replaceChildren();const id=currentConversation(),all=currentMessages() as ChatEntry[],state=id?conversationState(id):undefined,channels=chatRoom()?[...(channelMemory.get(roomId(chatRoom()!))?.values()||[])]:[];const results=state?searchMessages(all,channels,searchQuery,state):{messages:[],channels:[]};const messages=results.messages as ChatEntry[];conversationTools?.channels(searchQuery?results.channels:[]);
+ if(!messages.length){if(activeDM||searchQuery)return;const empty=document.createElement('div');empty.className='empty';empty.innerHTML='<div class="room-art"><span>✳</span><i></i><i></i></div><h3></h3><p></p><span class="pill"></span><div class="sssp-blueprint" aria-hidden="true"><img src="/sssp-vtol.svg" alt=""/><span>SSSP / VTOL–01</span></div>';empty.querySelector('h3')!.textContent=t(session.theme==='sssp'?'patrolEmpty':'emptyHeading');empty.querySelector('p')!.textContent=activeDM?t('dmEmpty'):t(active?'emptyRoom':'emptyText');empty.querySelector('.pill')!.textContent=t('emptyPill');if(!active&&!activeDM){const button=document.createElement('button');button.className='primary welcome-action';button.textContent=t('newRoom');button.onclick=openNew;empty.append(button);}log.append(empty);return;}
  for(const m of messages){
   if(m.nameChange){const change=document.createElement('p');change.className='name-change';change.dataset.message=m.id+'-name';const fallback=t('visitor',{id:m.sender.slice(0,8)});change.textContent=t('nameChanged',{from:m.nameChange.from||fallback,to:m.nameChange.to||fallback,id:m.sender.slice(0,8)});log.append(change);}
   if(m.kind==='heartbeat')continue;
   const own=m.sender===session.identity.publicKey,row=document.createElement('article');row.className='message-row'+(own?' own':'');row.dataset.message=m.id;
   const meta=document.createElement('div');meta.className='meta';meta.textContent=`${m.nickname?m.nickname+' · '+m.sender.slice(0,8):t('visitor',{id:m.sender.slice(0,8)})}${own?' · '+t('you'):''}  ${new Date(m.time).toLocaleTimeString(session.language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'})}`;
-  const profile=document.createElement('button');profile.className='sender-profile';profile.textContent=meta.textContent;profile.onclick=()=>openProfile(m.sender,m.nickname);meta.replaceChildren(profile);row.append(meta);
+  const profile=document.createElement('button');profile.className='sender-profile';profile.textContent=meta.textContent;profile.onclick=()=>openProfile(m.sender,m.nickname);meta.replaceChildren(profile);const hide=document.createElement('button');hide.className='message-hide';hide.textContent='×';hide.setAttribute('aria-label',session.language==='zh'?'屏蔽消息':'Hide message');hide.onclick=()=>{const state=conversationState(currentConversation()!);if(state.hidden.length>=256)return;state.hidden=[...new Set([...state.hidden,m.id])];state.rulesAt=Date.now();save();renderMessages();};meta.append(hide);row.append(meta);
   if(m.kind==='file'&&m.file)row.append(attachmentView(activeDM?{...chatRoom()!,inbox:(m as DirectMessage).recipient}:chatRoom()!,m.file,t));else{const bubble=document.createElement('p');bubble.textContent=m.text;row.append(bubble);}
   log.append(row);
  }
- restore();
+ restore();restoreReadingPosition();if(!pendingPosition)deferReadingSave();
 }
 function renderHistory(){const el=$('history-status');el.hidden=historyState==='idle';el.classList.toggle('loading',historyState==='loading');el.querySelector('span')!.textContent=t(historyState==='loading'?'historyLoading':'historyFailed');$('history-retry').hidden=historyState!=='error';}
-$('history-retry').onclick=()=>{if(active&&connection)void loadHistory(active,connection,generation);};
+$('history-retry').onclick=()=>{if(activeDM)void loadInboxHistory();else if(active&&connection)void loadHistory(active,connection,generation);};
 async function loadHistory(saved:SavedRoom,transport:NonNullable<typeof connection>,current:number){
  historyState='loading';renderHistory();
  const accept=(payloads:Uint8Array[])=>{
@@ -372,11 +389,11 @@ async function loadHistory(saved:SavedRoom,transport:NonNullable<typeof connecti
   const id=roomId(saved.room),messages=histories.get(id)||[],known=new Set(messages.map(m=>m.id));
   const members=membersByRoom.get(id)||new Map<string,Member>();
   for(const payload of payloads){try{const m=openHistory(saved.room,payload);if(known.has(m.id))continue;known.add(m.id);messages.push(m);observeMember(members,m);}catch{ /* Historical text must authenticate independently of live freshness. */ }}
-  messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));
-  histories.set(id,messages.slice(-1000));membersByRoom.set(id,members);renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();
+  messages.sort(compareMessages);
+  histories.set(id,messages);membersByRoom.set(id,members);renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();
  };
- const outcomes=await Promise.allSettled([transport.history(accept),storageHistory(roomId(saved.room),accept,controller?.signal)]);
- if(current===generation){historyState=outcomes.some(item=>item.status==='fulfilled')?'idle':'error';renderHistory();}
+ const outcomes=await Promise.allSettled([transport.history(accept,{since:conversationState('room:'+roomId(saved.room)).since??undefined,signal:controller?.signal}),storageHistory(roomId(saved.room),accept,controller?.signal)]);
+ if(current===generation){historyState=outcomes.some(item=>item.status==='fulfilled')?'idle':'error';renderHistory();restoreReadingPosition();pendingPosition=undefined;deferReadingSave();}
 }
 function languageChanged(){
  renderHistory();
@@ -395,6 +412,7 @@ function remember(room:Room,created=false):SavedRoom|undefined{
  const saved:SavedRoom={room,created};session.rooms.unshift(saved);save();renderRooms();return saved;
 }
 async function disconnect(){
+ captureReadingPosition();pendingPosition=undefined;searchQuery='';backgroundAbort?.abort();
  historyState='idle';renderHistory();
  meshPanel.reset();
  mesh?.leave();mesh?.stop();mesh=undefined;
@@ -423,7 +441,7 @@ async function prepareWrite(){
 }
 async function enter(saved:SavedRoom){
  closePanels();if(mobileLayout.matches)toggleSidebar(false);
- await disconnect();const current=++generation;active=saved;session.activeId=roomId(saved.room);busy=true;controller=new AbortController();const signal=controller.signal;progress={attempts:0,elapsed:0};
+ await disconnect();const current=++generation;active=saved;beginConversation('room:'+roomId(saved.room));session.activeId=roomId(saved.room);busy=true;controller=new AbortController();const signal=controller.signal;progress={attempts:0,elapsed:0};
  statusKey=saved.room.v===2&&!saved.room.key?'reading':'connecting';
  notice(statusKey==='reading'?undefined:'waitingNetwork');save();controls();renderRooms();renderMessages();
  if(matchMedia('(max-width:620px)').matches)document.querySelector('.chat')?.scrollIntoView({block:'start'});
@@ -445,7 +463,7 @@ async function enter(saved:SavedRoom){
 }
 function addMessage(saved:SavedRoom,m:Message){
  const id=roomId(saved.room),messages=histories.get(id)||[];
- const seen=seenIds.get(id)||new Set<string>();if(seen.has(m.id)||messages.some(item=>item.id===m.id))return;seen.add(m.id);if(seen.size>2000)seen.delete(seen.values().next().value!);seenIds.set(id,seen);if(active&&id===roomId(active.room))mesh?.receive(m);if(m.kind==='mesh')return;const members=membersByRoom.get(id)||new Map<string,Member>();const entry=observeMember(members,m);membersByRoom.set(id,members);if(m.kind!=='heartbeat'||entry.nameChange){messages.push(entry);messages.sort((a,b)=>a.time-b.time||a.id.localeCompare(b.id));if(messages.length>1000)messages.shift();histories.set(id,messages);}
+ const seen=seenIds.get(id)||new Set<string>();if(seen.has(m.id)||messages.some(item=>item.id===m.id))return;seen.add(m.id);if(seen.size>2000)seen.delete(seen.values().next().value!);seenIds.set(id,seen);if(active&&id===roomId(active.room)&&!conversationState('room:'+id).blocked.includes(m.sender))mesh?.receive(m);if(m.kind==='mesh')return;const members=membersByRoom.get(id)||new Map<string,Member>();const entry=observeMember(members,m);membersByRoom.set(id,members);if(m.kind!=='heartbeat'||entry.nameChange){messages.push(entry);messages.sort(compareMessages);histories.set(id,messages);noteUnread('room:'+id,m);}
  if(active&&id===roomId(active.room)){if(m.kind!=='heartbeat'||entry.nameChange)renderMessages();if($<HTMLDialogElement>('members-dialog').open)renderMembers();}
 }
 async function copyInvitation(room:Room){
@@ -454,7 +472,7 @@ async function copyInvitation(room:Room){
 async function removeRoom(saved:SavedRoom){
  if(!confirm(t('removeConfirm',{name:saved.room.name})))return;closePanels();
  const id=roomId(saved.room);if(active&&roomId(active.room)===id)await disconnect();
- session.rooms=session.rooms.filter(item=>roomId(item.room)!==id);histories.delete(id);seenIds.delete(id);membersByRoom.delete(id);channelMemory.delete(id);save();void deleteSavedRoom(id).catch(()=>{});renderRooms();notice('removed');
+ session.rooms=session.rooms.filter(item=>roomId(item.room)!==id);session.states=session.states?.filter(s=>s.id!=='room:'+id);histories.delete(id);seenIds.delete(id);membersByRoom.delete(id);channelMemory.delete(id);save();void deleteSavedRoom(id).catch(()=>{});renderRooms();notice('removed');
 }
 $('nickname-form').addEventListener('submit',event=>{event.preventDefault();if(!active)return;try{const nickname=normalizeNickname($<HTMLInputElement>('nickname').value);if(nickname)active.nickname=nickname;else delete active.nickname;$<HTMLInputElement>('nickname').value=nickname;save();savedFeedback('nickname-form','nickname-dialog','nicknameSaved');}catch{notice('nicknameInvalid');}});
 $('create').addEventListener('submit',event=>{event.preventDefault();if(busy)return;const room=makeRoom($<HTMLInputElement>('room-name').value.trim()||t('defaultRoom'),$<HTMLInputElement>('pow').checked);const saved=remember(room,true);if(saved)void enter(saved);});
@@ -466,17 +484,17 @@ $('reconnect').addEventListener('click',()=>{if(activeDM){inboxRetry=0;void ensu
 $('copy').addEventListener('click',()=>{if(active)void copyInvitation(active.room);});
 $('clear-session').addEventListener('click',async()=>{
  const persistent=isPersistent();if(!confirm(t(persistent?'clearDeviceConfirm':'clearConfirm')))return;closePanels();stopInbox();await disconnect();if(persistent)await clearDeviceData();
- try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
+ try{storage?.removeItem(SESSION_KEY);localStorage.removeItem(stateStorageKey);if(persistent) localStorage.removeItem(stateStorageKey);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });
 $('logout').addEventListener('click',async()=>{
  const persistent=isPersistent();if(!confirm(t(persistent?'logoutConfirm':'clearConfirm')))return;closePanels();stopInbox();await disconnect();if(persistent)await logoutPersistent();
- try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
+ try{storage?.removeItem(SESSION_KEY);if(persistent) localStorage.removeItem(stateStorageKey);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });
 $('clear-device').addEventListener('click',async()=>{
  if(!confirm(t('clearDeviceConfirm')))return;closePanels();stopInbox();await disconnect();await clearDeviceData();
- try{storage?.removeItem(SESSION_KEY);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
+ try{storage?.removeItem(SESSION_KEY);localStorage.removeItem(stateStorageKey);}catch{ /* Reload returns to identity selection even when storage is unavailable. */ }
  location.reload();
 });
 $('skin').addEventListener('change',()=>{session.theme=$<HTMLSelectElement>('skin').value as 'soft'|'sssp'|'kabutack';save();languageChanged();});
@@ -500,6 +518,37 @@ function checkDay(){
 setInterval(()=>{void ensureInbox();if(activeDM)controls();mesh?.tick();meshPanel.render();checkDay();void sendHeartbeat();refreshAccountState();if($<HTMLDialogElement>('members-dialog').open)renderMembers();},1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){void ensureInbox();mesh?.tick();checkDay();void sendHeartbeat();refreshAccountState(true);}});
 window.addEventListener('focus',()=>{checkDay();refreshAccountState(true);});
-languageChanged();save();keepMobileScreenOn();void ensureInbox();
+mountHistoryFeatures();languageChanged();save();keepMobileScreenOn();void ensureInbox();
 if(location.hash){const code=location.hash.slice(1);history.replaceState(null,'',location.pathname);try{const room=parseInvite(code);$<HTMLTextAreaElement>('invite-input').value=code;openNew();$('choose-join').click();$('form-feedback').textContent=room.name;}catch{notice('inviteInvalid');}}
 else if(session.activeId){const saved=session.rooms.find(item=>roomId(item.room)===session.activeId);if(saved)void enter(saved);}
+
+function rememberChannels(){const id=currentConversation(),room=chatRoom();if(!id||!room)return;const channels=[...(channelMemory.get(roomId(room))?.values()||[])].slice(-64);const state=conversationState(id);if(JSON.stringify(channels)!==JSON.stringify(state.channels)){state.channels=channels;save();}}
+function conversationItems(){const items=session.rooms.map(s=>({id:'room:'+roomId(s.room),name:s.room.name}));const peers=new Set([...(session.contacts||[]).map(c=>c.publicKey),...directPeers.keys(),...(session.states||[]).filter(s=>s.id.startsWith('dm:')).map(s=>s.id.slice(3))]);for(const key of peers)items.push({id:'dm:'+key,name:directName(key)});return items;}
+async function loadInboxHistory(){
+ if(inboxHistoryFlight){const prior=inboxHistoryFlight;await prior;if(activeDM&&pendingPosition){restoreReadingPosition();pendingPosition=undefined;historyState='idle';renderHistory();deferReadingSave();}return;}const transport=inboxConnection,signal=inboxController?.signal;if(!transport)return;const current=generation;backgroundAbort?.abort();
+ if(activeDM){historyState='loading';renderHistory();}
+ inboxHistoryFlight=(async()=>{const accept=(payloads:Uint8Array[])=>{payloads.forEach(p=>receiveDirect(p,true));if(activeDM)renderMessages();renderRooms();};const results=await Promise.allSettled([transport.history(accept,{signal}),storageHistory(session.identity.publicKey,accept,signal)]);if(activeDM&&current===generation){historyState=results.some(r=>r.status==='fulfilled')?'idle':'error';renderHistory();restoreReadingPosition();pendingPosition=undefined;deferReadingSave();}})().finally(()=>{inboxHistoryFlight=undefined;});return inboxHistoryFlight;
+}
+async function backgroundCheck(){
+ if(backgroundBusy||inboxHistoryFlight||document.hidden||busy||historyState==='loading'||!inboxConnection?.connected())return;
+ queue.reconcile([...session.rooms.map(s=>'room:'+roomId(s.room)),'inbox']);const selected=currentConversation(),job=queue.next(selected?.startsWith('dm:')?'inbox':selected);if(!job)return;
+ backgroundBusy=true;const abort=new AbortController();backgroundAbort=abort;const timer=setTimeout(()=>abort.abort(),12000);
+ try{
+  const saved=job==='inbox'?undefined:session.rooms.find(s=>'room:'+roomId(s.room)===job);if(job!=='inbox'&&(!saved||!saved.room.key))return;
+  const room=saved?.room||inboxRoom(session.identity.publicKey),accept=(payloads:Uint8Array[])=>{if(abort.signal.aborted)return;for(const payload of payloads){if(saved)try{const message=openHistory(saved.room,payload),id=roomId(saved.room),messages=histories.get(id)||[];if(!messages.some(m=>m.id===message.id)){messages.push(message);messages.sort(compareMessages);histories.set(id,messages);noteUnread(job,message);}}catch{}else receiveDirect(payload,true);}renderRooms();};
+  // Reuse the Inbox node for Store queries; never create one connection per background room.
+  await Promise.allSettled([inboxConnection.history(accept,{target:room,maxPages:1,signal:abort.signal}),storageHistory(roomId(room),accept,abort.signal,1)]);
+ }finally{clearTimeout(timer);if(backgroundAbort===abort)backgroundAbort=undefined;backgroundBusy=false;}
+}
+function mountHistoryFeatures(){
+ for(const item of conversationItems())conversationState(item.id);
+ conversationTools=mountConversationTools({host:shell,preferences,language:()=>session.language,persistent:isPersistent,current:currentConversation,items:conversationItems,state:conversationState,
+  save:async state=>{const valid=validateConversation(state),i=session.states!.findIndex(s=>s.id===valid.id);session.states![i]=valid;save();await flushPersistentState();renderMessages();renderRooms();if(currentConversation()===valid.id){if(activeDM)void loadInboxHistory();else if(active&&connection)void loadHistory(active,connection,generation);}},
+  search:query=>{searchQuery=query;renderMessages();},identity:()=>({name:session.name||'',publicKey:session.identity.publicKey,rooms:session.rooms.map(s=>s.room.name),contacts:(session.contacts||[]).map(c=>c.name||c.publicKey)}),rename:name=>{session.name=normalizeNickname(name);save();languageChanged();},
+  sync:async()=>{await flushPersistentState();const restored=await refreshPersistentState(session.language);if(!restored)throw Error('Unavailable');session.states=mergeConversations(session.states||[],restored.states||[]);session.rooms=restored.rooms;session.contacts=restored.contacts;session.name=restored.name;save();languageChanged();},
+  reset:async()=>{await flushPersistentState();const contents=await resetRecoveryFile();const {downloadRecovery}=await import('./persistent/startup.ts');if(!await downloadRecovery(contents))throw Error('Recovery reset; download pending');},
+  openChannel:network=>{$('room-network').click();document.querySelector<HTMLButtonElement>(`.channel-card[data-network="${network.id}"]`)?.click();}});
+ const log=$('messages');log.addEventListener('scroll',deferReadingSave,{passive:true});for(const event of ['wheel','touchstart','pointerdown'])log.addEventListener(event,()=>{pendingPosition=undefined;},{passive:true});window.addEventListener('pagehide',captureReadingPosition);
+ const block=document.createElement('button');block.id='profile-block';block.className='danger';block.textContent=session.language==='zh'?'屏蔽此用户':'Block user';block.onclick=()=>{const id=currentConversation(),key=$('profile-key').textContent;if(!id||!key||key===session.identity.publicKey)return;const state=conversationState(id);if(state.blocked.length>=64)return;state.blocked=[...new Set([...state.blocked,key])];state.rulesAt=Date.now();save();closePanels();renderMessages();};profilePanel.append(block);
+ setTimeout(()=>void backgroundCheck(),8000);setInterval(()=>void backgroundCheck(),20000);
+}

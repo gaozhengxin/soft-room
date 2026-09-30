@@ -85,25 +85,26 @@ export async function connect(room:Room,receive:(payload:Uint8Array)=>void,signa
     });
     sendTail=send.catch(()=>{});try{return await send;}finally{queued--;}
    },
-   async history(receivePage:(payloads:Uint8Array[])=>void){
+   async history(receivePage:(payloads:Uint8Array[])=>void,options:{target?:Room;since?:number;maxPages?:number;signal?:AbortSignal}={}){
+    const historyDecoder=options.target?current.createDecoder({contentTopic:topic(options.target)}):decoder;
     const deadline=Date.now()+45000,tried=new Set<string>();let successes=0;
-    while(!stopped&&Date.now()<deadline&&tried.size<3){
+    while(!stopped&&!options.signal?.aborted&&Date.now()<deadline&&tried.size<3){
      const candidates=await Promise.all(current.libp2p.getPeers().map(async id=>({id,peer:await current.libp2p.peerStore.get(id).catch(()=>undefined)})));
      const candidate=candidates.find(c=>live().has(c.id.toString())&&!tried.has(c.id.toString())&&c.peer?.protocols.includes(current.store.multicodec));
      if(!candidate){if(successes)break;await pause(500);continue;}
      tried.add(candidate.id.toString());
-     // Only an upper time bound: the installed SDK splits paired bounds oldest-first.
-     const iterator=current.store.queryGenerator([decoder],{peerId:candidate.id,timeEnd:new Date(),paginationForward:false,paginationLimit:50});
+     // Background scans omit the lower bound to keep newest-first pagination.
+     const iterator=current.store.queryGenerator([historyDecoder],{peerId:candidate.id,timeEnd:new Date(),...(options.since!==undefined?{timeStart:new Date(options.since)}:{}),paginationForward:false,paginationLimit:50});
      try{
-      for(let page=0;page<10&&Date.now()<deadline;page++){
-       const result=await bounded(iterator.next(),Math.min(8000,deadline-Date.now()));
-       if(stopped)throw abortError();
+      for(let page=0;page<(options.maxPages??Infinity);page++){
+       const result=await bounded(iterator.next(),8000);
+       if(stopped||options.signal?.aborted)throw abortError();
        if(result.done)break;
        const decoded=await bounded(Promise.all(result.value),2000);
        if(stopped)throw abortError();
        receivePage(decoded.flatMap(m=>m?.payload&&m.payload.length<=16000?[m.payload]:[]));
       }
-      successes++;
+      successes++;break;
      }catch{if(stopped)throw abortError();}
      finally{void iterator.return(undefined).catch(()=>{});}
     }

@@ -32,3 +32,11 @@ export async function recoverMasterKey(did:string,code:string,value:unknown){
  try{raw=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(record.iv),additionalData:recoveryAad(did),tagLength:128},wrapper,unb64(record.wrappedKey));}catch{throw Error('Invalid recovery code');}
  return importMasterKey(new Uint8Array(raw));
 }
+
+// Rotate the recovery secret without changing the non-extractable archive key or identity.
+export async function renewRecoveryBundle(did:string,code:string,record:RecoveryRecord){
+ await recoverMasterKey(did,code,record);const old=await recoveryKey(decodeRecoveryCode(code));
+ const raw=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(record.iv),additionalData:recoveryAad(did),tagLength:128},old,unb64(record.wrappedKey)));
+ const secret=randomBytes(32),iv=randomBytes(12);
+ try{const wrapper=await recoveryKey(secret),wrapped=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:recoveryAad(did),tagLength:128},wrapper,raw);return {code:encodeRecoveryCode(secret),record:{$type:RECOVERY_COLLECTION,version:1,alg:'A256GCM',iv:b64(iv),wrappedKey:b64(new Uint8Array(wrapped)),updatedAt:new Date().toISOString()} as RecoveryRecord};}finally{raw.fill(0);secret.fill(0);}
+}

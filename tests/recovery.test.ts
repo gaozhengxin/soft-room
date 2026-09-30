@@ -16,3 +16,11 @@ test('recovery files are account-bound and reject damage or another valid secret
  const created=await createRecoveryBundle(did),file=recoveryFile(did,created.code);assert.throws(()=>parseRecoveryFile(file,'did:plc:other'),/account mismatch/);assert.throws(()=>decodeRecoveryCode(created.code.slice(0,-1)+(created.code.endsWith('A')?'B':'A')),/Invalid recovery code/);
  const other=await createRecoveryBundle(did);await assert.rejects(recoverMasterKey(did,other.code,created.record),/Invalid recovery code/);assert.throws(()=>parseRecoveryFile('{"type":"soft-room-recovery"}',did),/Invalid recovery file/);
 });
+
+test('recovery rotation preserves archive encryption while retiring the old file against the current record',async()=>{
+ const {renewRecoveryBundle}=await import('../src/persistent/recovery.ts');
+ const before=await createRecoveryBundle(did),encrypted=await encryptState(before.key,IDENTITY_COLLECTION,IDENTITY_RKEY,{secret:'unchanged'}),after=await renewRecoveryBundle(did,before.code,before.record);
+ assert.notEqual(before.code,after.code);await assert.rejects(recoverMasterKey(did,before.code,after.record));
+ const restored=await recoverMasterKey(did,after.code,after.record);assert.deepEqual(await decryptState(restored,IDENTITY_COLLECTION,IDENTITY_RKEY,encrypted),{secret:'unchanged'});
+ await assert.rejects(renewRecoveryBundle('did:plc:other',before.code,before.record));
+});

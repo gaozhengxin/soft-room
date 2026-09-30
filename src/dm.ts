@@ -41,13 +41,13 @@ export function sealDirect(identity:Identity,recipient:string,body:string,nickna
  const secret=randomBytes(32),ephemeral=x25519.getPublicKey(secret),aad=context(recipient,ephemeral),shared=x25519.getSharedSecret(secret,ed25519.utils.toMontgomery(hexToBytes(recipient))),key=encryptionKey(shared,aad),iv=randomBytes(24);
  try{const payload=concatBytes(new Uint8Array([1]),ephemeral,iv,xchacha20poly1305(key,iv,aad).encrypt(plain));if(payload.length>16000)throw Error('Payload too large');return {message,payload};}finally{secret.fill(0);shared.fill(0);key.fill(0);}
 }
-export function openDirect(identity:Identity,payload:Uint8Array,now=Date.now()):DirectMessage{
+export function openDirect(identity:Identity,payload:Uint8Array,now=Date.now(),historical=false):DirectMessage{
  if(payload.length<74||payload.length>16000||payload[0]!==1)throw Error('Invalid inbox payload');
  const ephemeral=payload.slice(1,33),aad=context(identity.publicKey,ephemeral),secret=ed25519.utils.toMontgomerySecret(identity.secret);
  let plain:Uint8Array;try{const shared=x25519.getSharedSecret(secret,ephemeral),key=encryptionKey(shared,aad);try{plain=xchacha20poly1305(key,payload.slice(33,57),aad).decrypt(payload.slice(57));}finally{shared.fill(0);key.fill(0);}}finally{secret.fill(0);}
  const envelope=JSON.parse(text.decode(plain));if(typeof envelope.body!=='string'||typeof envelope.signature!=='string'||!/^[a-f0-9]{128}$/.test(envelope.signature))throw Error('Invalid signature');
  const m=JSON.parse(envelope.body) as DirectMessage;
- if(m.v!==1||m.dm!==1||m.recipient!==identity.publicKey||m.room!==identity.publicKey||m.nonce!==0||typeof m.id!=='string'||!/^[a-f0-9]{32}$/.test(m.id)||!Number.isSafeInteger(m.time)||now-m.time>HISTORY_WINDOW||m.time-now>5000)throw Error('Invalid direct message');
+ if(m.v!==1||m.dm!==1||m.recipient!==identity.publicKey||m.room!==identity.publicKey||m.nonce!==0||typeof m.id!=='string'||!/^[a-f0-9]{32}$/.test(m.id)||!Number.isSafeInteger(m.time)||(!historical&&now-m.time>HISTORY_WINDOW)||m.time-now>5000)throw Error('Invalid direct message');
  validatePublicKey(m.sender);if(m.nickname!==undefined&&(typeof m.nickname!=='string'||normalizeNickname(m.nickname)!==m.nickname))throw Error('Invalid nickname');
  if(!ed25519.verify(hexToBytes(envelope.signature),utf8.encode(envelope.body),hexToBytes(m.sender)))throw Error('Invalid signature');validateContent(m,()=>roomId(directRoom(identity,m.sender)),now);return m;
 }

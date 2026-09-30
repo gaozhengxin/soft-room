@@ -1,0 +1,33 @@
+import {build} from 'vite';
+import {continueTemporary} from './browser-identity.mjs';
+import {chromium} from 'playwright-core';
+import {readFileSync} from 'node:fs';
+import {resolve,extname} from 'node:path';
+import assert from 'node:assert/strict';
+import {makeRoom,makeIdentity,seal,roomId} from '../src/protocol.ts';
+import {sealDirect} from '../src/dm.ts';
+import {createNetwork} from '../src/mesh-wire.ts';
+import {encodeSession} from '../src/session.ts';
+import {emptyConversation} from '../src/conversation-state.ts';
+const out='/tmp/soft-room-conversation-fixture';
+await build({logLevel:'error',resolve:{alias:[{find:'./transport.ts',replacement:resolve('tests/conversation-transport.ts')}]},build:{outDir:out,emptyOutDir:true}});
+const identity=makeIdentity(),peer=makeIdentity(),room=makeRoom('History test',false),other=makeRoom('Background test',false),packets=Array.from({length:85},(_,i)=>seal(room,peer,0,`history-row-${String(i).padStart(3,'0')} `+'Long message '.repeat(9))),anchor=packets[35].message;
+const state={...emptyConversation('room:'+roomId(room)),channels:[createNetwork(roomId(room),peer,'Searchable channel')],position:{id:anchor.id,sender:anchor.sender,time:anchor.time,offset:26,updatedAt:Date.now()}};
+const serialized=encodeSession({identity,rooms:[{room,nonce:0},{room:other,nonce:0}],contacts:[{publicKey:peer.publicKey,name:'Peer'}],language:'en',activeId:roomId(room),states:[state]});
+const fixtures={[roomId(room)]:packets.reverse().map(p=>[...p.payload]),[roomId(other)]:[[...seal(other,peer,0,'background new').payload]],[identity.publicKey]:[[...sealDirect(peer,identity.publicKey,'inbox searchable text').payload]]};
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+ const context=await browser.newContext({viewport:{width:1100,height:800},locale:'en-US'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/*',async route=>{const u=new URL(route.request().url());if(u.hostname==='conversation.test'){if(u.pathname==='/cdn-cgi/trace')return route.fulfill({body:'ip=203.0.113.8\nloc=US\n'});try{const p=resolve(out,'.'+(u.pathname==='/'?'/index.html':u.pathname));return route.fulfill({body:readFileSync(p),contentType:({'.js':'text/javascript','.css':'text/css','.html':'text/html','.svg':'image/svg+xml'})[extname(p)]||'application/octet-stream'});}catch{}}if(u.pathname.includes('/messages'))return route.fulfill({json:{messages:[]}});return route.abort();});
+ await page.addInitScript(({serialized,fixtures})=>{if(!sessionStorage.getItem('soft-room/session/v1'))sessionStorage.setItem('soft-room/session/v1',serialized);window.conversationPackets=fixtures;},{serialized,fixtures});
+ await page.goto('https://conversation.test');await continueTemporary(page);await page.locator('#messages article').first().waitFor();await page.waitForFunction(()=>document.querySelectorAll('#messages article').length===85);await page.waitForTimeout(900);
+ let offset=await page.locator(`[data-message="${anchor.id}"]`).evaluate(el=>el.getBoundingClientRect().top-document.querySelector('#messages').getBoundingClientRect().top);assert(Math.abs(offset-26)<3,`anchor offset ${offset}`);
+ await page.locator('#conversation-search').fill('Searchable channel');assert.equal(await page.locator('#search-channels button').textContent(),'Searchable channel');await page.locator('#conversation-search').fill('history-row-071');assert.equal(await page.locator('#messages article').count(),1);await page.locator('.message-hide').click();assert.equal(await page.locator('#messages article').count(),0);
+ await page.locator('#conversation-settings').click();assert.equal(await page.locator('#history-since').inputValue(),'');assert.match(await page.locator('#hidden-messages').inputValue(),/^[a-f0-9]{32}$/);await page.locator('#hidden-messages').fill('');await page.locator('#conversation-rules button[type=submit], #conversation-rules button.primary').click();await page.getByText('Saved',{exact:true}).waitFor();await page.locator('#conversation-dialog .sheet-head button').click();assert.equal(await page.locator('#messages article').count(),1);
+ await page.locator('#conversation-search').fill('');await page.waitForTimeout(900);await page.reload();await continueTemporary(page);await page.waitForFunction(()=>document.querySelectorAll('#messages article').length===85);await page.waitForTimeout(900);assert.equal(errors.length,0,errors.join('\n'));
+ await page.waitForFunction(()=>document.querySelector('.unread-dot'),null,{timeout:30000});
+ await page.locator('.room-choice').filter({hasText:'Peer'}).click();await page.getByText('inbox searchable text',{exact:true}).waitFor();await page.locator('#conversation-search').fill('searchable');assert.equal(await page.locator('#messages article').count(),1);
+ await page.locator('#message').focus();await page.waitForTimeout(2500);assert.equal(await page.locator('#message').evaluate(el=>document.activeElement===el),true);
+ await page.locator('#messages .sender-profile').click();await page.locator('#profile-block').click();assert.equal(await page.locator('#messages article').count(),0);await page.locator('#conversation-settings').click();assert.equal(await page.locator('#blocked-users').inputValue(),peer.publicKey);
+ await page.locator('#conversation-dialog .sheet-head button').click();await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'/tmp/soft-room-conversations-mobile.png'});assert.equal(errors.length,0,errors.join('\n'));console.log('PASS real UI: unordered multi-page reading anchor, search, hide/unhide, local reload, serial background badge, Inbox DM search/block and stable composer focus');
+}finally{await browser.close();}
