@@ -73,8 +73,8 @@ async function openForm(page,create){
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
  const firstContext=await browser.newContext({locale:'en-US',acceptDownloads:true}),first=await firstContext.newPage();await installRoutes(first);
- await openForm(first,true);
- await first.getByRole('button',{name:'Create Soft Room identity'}).click();
+ await openForm(first,false);
+ await first.getByRole('button',{name:'Generate recovery file',exact:true}).click();
  try{await first.getByRole('heading',{name:'Save your recovery file'}).waitFor();}catch(error){console.error(await first.locator('body').innerText());console.error(requests.join('\n'));throw error;}
  const downloadPromise=first.waitForEvent('download');await first.getByRole('button',{name:'Download recovery file'}).click();const download=await downloadPromise,path=await download.path();assert(path);
  const recoveryContents=readFileSync(path,'utf8'),recovery=JSON.parse(recoveryContents);assert.equal(recovery.type,'soft-room-recovery');assert.equal(recovery.account,did);assert.match(recovery.recoveryCode,/^SRK1\./);
@@ -84,6 +84,11 @@ try{
 
  const secondContext=await browser.newContext({locale:'en-US'}),second=await secondContext.newPage();await installRoutes(second);
  await openForm(second,false);
+ const originalRecords=JSON.stringify([...records]);
+ await second.getByRole('button',{name:'Generate recovery file',exact:true}).click();
+ await second.getByText('This account already has a persistent identity. Go back and choose “Sign in to persistent identity”.',{exact:true}).waitFor();
+ assert.equal(JSON.stringify([...records]),originalRecords);
+ await second.getByLabel('App Password').fill('test-password');
  await second.getByLabel(/Recovery file/).setInputFiles({name:'Soft-Room-Recovery.softroom-recovery',mimeType:'application/json',buffer:Buffer.from(recoveryContents)});
  await second.getByText('Recovery file loaded',{exact:true}).waitFor();assert(await second.getByText('Recovery file loaded',{exact:true}).evaluate(node=>node.classList.contains('recovery-loaded')));
  await second.getByRole('button',{name:'Sign in and restore'}).click();
@@ -96,9 +101,9 @@ try{
 
  await second.waitForFunction(()=>JSON.parse(sessionStorage.getItem('soft-room/session/v1')).name==='Remote Name',undefined,{timeout:8_000});const refreshesBefore=requests.filter(value=>value.includes('/xrpc/com.atproto.server.refreshSession')).length;
  await second.evaluate(()=>sessionStorage.removeItem('soft-room/persistent-active/v1'));await second.reload();await second.getByRole('button',{name:'Continue as alice.test'}).click();await second.locator('#my-identity').waitFor();const refreshedSession=JSON.parse(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.equal(refreshedSession.name,'Remote Name');assert(requests.filter(value=>value.includes('/xrpc/com.atproto.server.refreshSession')).length>refreshesBefore);
- await second.locator('#my-identity').click();second.once('dialog',dialog=>dialog.accept());await second.getByRole('button',{name:'Delete login information'}).click();await second.getByRole('heading',{name:'Choose your identity'}).waitFor();assert.equal(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')),null);assert.equal(await second.evaluate(()=>localStorage.getItem('soft-room/persistent-identities/v1')),'[]');assert.equal(await second.getByRole('button',{name:'Continue as alice.test'}).count(),0);assert.equal(await second.evaluate(async id=>new Promise(resolve=>{const open=indexedDB.open('soft-room-private-v1');open.onsuccess=()=>{const get=open.result.transaction('keys').objectStore('keys').get(`account-session:${id}`);get.onsuccess=()=>resolve(get.result);};}),did),undefined);assert(requests.some(value=>value.includes('/xrpc/com.atproto.server.deleteSession')));
+ await second.locator('#my-identity').click();second.once('dialog',dialog=>dialog.accept());await second.locator('#clear-device').click();await second.getByRole('heading',{name:'Choose your identity'}).waitFor();assert.equal(await second.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')),null);assert.equal(await second.evaluate(()=>localStorage.getItem('soft-room/persistent-identities/v1')),'[]');assert.equal(await second.getByRole('button',{name:'Continue as alice.test'}).count(),0);assert.equal(await second.evaluate(async id=>new Promise(resolve=>{const open=indexedDB.open('soft-room-private-v1');open.onsuccess=()=>{const get=open.result.transaction('keys').objectStore('keys').get(`account-session:${id}`);get.onsuccess=()=>resolve(get.result);};}),did),undefined);assert(requests.some(value=>value.includes('/xrpc/com.atproto.server.deleteSession')));
 
- const thirdContext=await browser.newContext({locale:'en-US'}),third=await thirdContext.newPage();await installRoutes(third);await openForm(third,false);await third.getByRole('button',{name:'Sign in and restore'}).click();await third.getByRole('alert').filter({hasText:/current identity is still temporary/}).waitFor();
+ const thirdContext=await browser.newContext({locale:'en-US'}),third=await thirdContext.newPage();await installRoutes(third);await openForm(third,false);await third.getByRole('button',{name:'Sign in and restore'}).click();await third.locator('#cache-alert').waitFor();
  const thirdSession=JSON.parse(await third.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')));assert.equal(thirdSession.name,'alice.test');assert.notEqual(thirdSession.secret,firstSession.secret);assert.equal(await third.evaluate(()=>sessionStorage.getItem('soft-room/persistent-active/v1')),null);assert.equal(await third.evaluate(()=>sessionStorage.getItem('soft-room/persistent-recovery-pending/v1')),'1');
  await thirdContext.close();await syncedContext.close();await secondContext.close();await firstContext.close();
  console.log('PASS recovery restores identity, usernames sync through encrypted PDS state, no-file login stays temporary, and logout returns to identity selection');

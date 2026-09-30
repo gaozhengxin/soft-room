@@ -62,6 +62,6 @@ async function start(){
   const result=parseTrace(await readLocation(native,import.meta.env.VITE_PUBLIC_ORIGIN));
   if(blockedCountry(result.country)&&!accessBypassed()){blockedRegion();return;}
  }catch{const panel=screen(text.failed,text.failedDetail);button(panel,text.retry,()=>void start());return;}
- try{app.replaceChildren();const {identityStartup}=await import('./persistent/startup.ts');await identityStartup(app,language);await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
+ try{if(location.hash.startsWith('#profile=')){const {showPublicProfile}=await import('./public-profile.ts');showPublicProfile(app,location.hash,language);window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#profile='))showPublicProfile(app,location.hash,language);else location.reload();});return;}app.replaceChildren();const {identityStartup}=await import('./persistent/startup.ts');await identityStartup(app,language);await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
 }
 void start();
