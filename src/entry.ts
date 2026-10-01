@@ -1,6 +1,8 @@
 import './compat.ts';
 import {nativeApp,readLocation} from './platform.ts';
 import {Capacitor} from '@capacitor/core';
+import {App} from '@capacitor/app';
+import {profileHashFromAppUrl,showPublicProfile,showProfileDialog} from './public-profile.ts';
 import './style.css';
 import './sssp.css';
 import './access.css';
@@ -56,12 +58,18 @@ function unsupported(){
  button(panel,text.copy,()=>{void(async()=>{try{await navigator.clipboard.writeText(location.href);status.textContent=text.copied;}catch{status.textContent=text.copyManual;const input=document.createElement('textarea');input.value=location.href;input.readOnly=true;input.setAttribute('aria-label',text.copy);panel.append(input);input.focus();input.select();}})();});panel.append(status);
 }
 async function start(){
+ if(location.hash.startsWith('#profile=')){showPublicProfile(app,location.hash,language,native,()=>{history.replaceState(null,'',location.pathname);void start();});return;}
  if(!native&&!info.supported){unsupported();return;}
  screen(text.checking,text.wait,true);
  if(native||!localAddress(location.hostname))try{
   const result=parseTrace(await readLocation(native,import.meta.env.VITE_PUBLIC_ORIGIN));
   if(blockedCountry(result.country)&&!accessBypassed()){blockedRegion();return;}
  }catch{const panel=screen(text.failed,text.failedDetail);button(panel,text.retry,()=>void start());return;}
- try{if(location.hash.startsWith('#profile=')){const {showPublicProfile}=await import('./public-profile.ts');showPublicProfile(app,location.hash,language);window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#profile='))showPublicProfile(app,location.hash,language);else location.reload();});return;}app.replaceChildren();const {identityStartup}=await import('./persistent/startup.ts');await identityStartup(app,language);await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
+ try{app.replaceChildren();const {identityStartup}=await import('./persistent/startup.ts');await identityStartup(app,language);await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
 }
-void start();
+async function boot(){
+ if(native){await App.addListener('appUrlOpen',event=>{const hash=profileHashFromAppUrl(event.url);if(hash)showProfileDialog(hash,language);});const launch=await App.getLaunchUrl();const hash=launch?.url&&profileHashFromAppUrl(launch.url);if(hash)history.replaceState(null,'',location.pathname+hash);}
+ window.addEventListener('hashchange',()=>{if(!location.hash.startsWith('#profile='))return;if(app.querySelector('.shell')){showProfileDialog(location.hash,language);history.replaceState(null,'',location.pathname);}else showPublicProfile(app,location.hash,language,native,()=>{history.replaceState(null,'',location.pathname);void start();});});
+ await start();
+}
+void boot();

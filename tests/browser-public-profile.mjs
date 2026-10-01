@@ -13,10 +13,17 @@ try{
  await page.locator('#my-identity').click();await page.locator('#global-name').fill('小明 <img src=x>');await page.getByRole('button',{name:'Save username',exact:true}).click();
  await page.waitForFunction(()=>!document.querySelector('#identity-dialog').open);
  await page.locator('#my-identity').click();await page.getByRole('button',{name:'Create profile link',exact:true}).click();
- const link=await page.locator('#public-profile-link').inputValue();assert(link.startsWith(origin+'/#profile='));
+ const before=page.url();await page.locator('#public-profile-open').click();assert.equal(page.url(),before);assert.equal(owner.pages().length,1);await page.locator('#public-profile-dialog h1').waitFor();assert.equal(await page.locator('#public-profile-dialog h1').textContent(),'小明 <img src=x>');await page.locator('#public-profile-dialog > button').click();assert.equal(await page.locator('#identity-dialog').evaluate(el=>el.open),true);const link=await page.locator('#public-profile-link').inputValue();assert(link.startsWith(origin+'/#profile='));
  const visitor=await browser.newContext({locale:'en-US',viewport:{width:390,height:844}});await routes(visitor);const guest=await visitor.newPage();await guest.goto(link);
- await guest.locator('.public-profile h1').waitFor();assert.equal(await guest.locator('#app').innerText(),'小明 <img src=x>');assert.equal(await guest.locator('#app img').count(),0);assert.equal(await guest.locator('.identity-startup').count(),0);assert.equal(await guest.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')),null);assert(await guest.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await guest.locator('.public-profile h1').waitFor();assert.equal(await guest.locator('.public-profile h1').innerText(),'小明 <img src=x>');assert((await guest.locator('#profile-open-app').getAttribute('href')).startsWith('softroom://profile/#profile='));assert.equal(await guest.locator('#app img').count(),0);assert.equal(await guest.locator('.identity-startup').count(),0);assert.equal(await guest.evaluate(()=>sessionStorage.getItem('soft-room/session/v1')),null);assert(await guest.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await guest.reload();assert.equal(await guest.locator('.public-profile h1').innerText(),'小明 <img src=x>');
  await guest.goto(origin+'/#profile=%');await guest.getByRole('heading',{name:'Invalid link',exact:true}).waitFor();
+ for(const platform of ['android','ios']){
+  const native=await browser.newContext({locale:'en-US'});await routes(native);
+  await native.addInitScript(({url,platform})=>{if(platform==='android')window.androidBridge={};else window.webkit={messageHandlers:{bridge:{}}};window.Capacitor={PluginHeaders:[{name:'App',methods:[{name:'getLaunchUrl',rtype:'promise'},{name:'addListener',rtype:'callback'},{name:'removeListener',rtype:'promise'}]}],nativePromise:async()=>({url}),nativeCallback:(_plugin,method,_options,callback)=>{if(method==='addListener')window.profileListener=callback;return Promise.resolve('profile-listener');}};},{url:'softroom://profile/'+new URL(link).hash,platform});
+  const app=await native.newPage();await app.goto(origin);await app.locator('.public-profile h1').waitFor();assert.equal(await app.locator('.public-profile h1').innerText(),'小明 <img src=x>');assert.equal(await app.locator('#profile-open-app').count(),0);
+  await app.evaluate(url=>window.profileListener({url}), 'softroom://profile/'+new URL(link).hash);await app.locator('#public-profile-dialog h1').waitFor();assert.equal(native.pages().length,1);await app.locator('#public-profile-dialog > button').click();await app.locator('.public-profile h1').waitFor();await native.close();
+ }
+ console.log('PASS Android/iOS bridge cold launch and warm profile delivery stay inside the app');
  console.log('PASS shared profile opens without login, renders only escaped name, survives reload, and rejects invalid links');
 }finally{await browser.close();}

@@ -8,7 +8,7 @@ export function mountConversationTools(o:Options){
  const search=document.createElement('input');search.id='conversation-search';search.type='search';search.maxLength=200;search.autocomplete='off';search.oninput=()=>o.search(search.value);
  const settings=document.createElement('button');settings.id='conversation-settings';settings.type='button';toolbar.append(search,settings);o.host.querySelector('#messages')!.before(toolbar);
  const channelResults=document.createElement('div');channelResults.id='search-channels';toolbar.after(channelResults);
- const archive=document.createElement('button');archive.id='archive-open';archive.type='button';archive.className='archive-link';o.preferences.append(archive);
+ const archive=document.createElement('button');archive.id='archive-open';archive.type='button';archive.className='archive-link';const share=o.preferences.querySelector('#profile-share');if(share)share.after(archive);else o.preferences.append(archive);
  const dialog=document.createElement('dialog');dialog.id='conversation-dialog';dialog.className='sheet';const head=document.createElement('div');head.className='sheet-head';const title=document.createElement('h2'),close=document.createElement('button');close.type='button';close.textContent='×';close.onclick=()=>dialog.close();head.append(title,close);const body=document.createElement('div');body.className='sheet-body';dialog.append(head,body);o.host.append(dialog);
  function field(text:string,input:HTMLElement){const el=document.createElement('label');el.textContent=text;el.append(input);return el;}
  function open(archiveView=false){
@@ -31,5 +31,5 @@ export function mountConversationTools(o:Options){
   body.append(status);document.querySelectorAll<HTMLDialogElement>('dialog[open]').forEach(d=>d.close());dialog.showModal();
  }
  settings.onclick=()=>open();archive.onclick=()=>open(true);
- return {render(){toolbar.hidden=!o.current();archive.hidden=!o.persistent();archive.textContent='Archive';search.placeholder=label('搜索消息、文件、频道','Search messages, files, channels');search.setAttribute('aria-label',search.placeholder);settings.textContent=label('历史记录','History');close.setAttribute('aria-label',label('关闭','Close'));},clear(){search.value='';channelResults.replaceChildren();o.search('');},channels(items:Network[]){channelResults.replaceChildren();for(const n of items){const button=document.createElement('button');button.textContent=n.name;button.onclick=()=>o.openChannel(n);channelResults.append(button);}},dialog};
+ return {render(){toolbar.hidden=!o.current();archive.hidden=!o.persistent();archive.textContent=label('Archive 内容管理','Manage Archive');search.placeholder=label('搜索消息、文件、频道','Search messages, files, channels');search.setAttribute('aria-label',search.placeholder);settings.textContent=label('历史记录','History');close.setAttribute('aria-label',label('关闭','Close'));},clear(){search.value='';channelResults.replaceChildren();o.search('');},channels(items:Network[]){channelResults.replaceChildren();for(const n of items){const button=document.createElement('button');button.textContent=n.name;button.onclick=()=>o.openChannel(n);channelResults.append(button);}},dialog};
 }

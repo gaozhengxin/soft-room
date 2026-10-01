@@ -19,9 +19,18 @@ export function parsePublicProfile(hash:string):{publicKey:string;name:string}{
  if(!ed25519.verify(hexToBytes(value.signature),utf8.encode(profileBody(value.publicKey,value.name)),hexToBytes(value.publicKey)))throw Error('Invalid profile signature');
  return {publicKey:value.publicKey,name:value.name};
 }
-export function showPublicProfile(host:HTMLElement,hash:string,language:'zh'|'en'){
+export function showPublicProfile(host:HTMLElement,hash:string,language:'zh'|'en',native=false,back?:()=>void){
  const page=document.createElement('main');page.className='public-profile';
  const name=document.createElement('h1');
  try{name.textContent=parsePublicProfile(hash).name;}catch{name.textContent=language==='zh'?'链接无效':'Invalid link';}
- page.append(name);host.replaceChildren(page);
+ page.append(name);if(!native){try{const link=document.createElement('a');link.id='profile-open-app';link.href=profileAppLink(hash);link.textContent=language==='zh'?'在 Soft Room App 中打开':'Open in Soft Room App';page.append(link);}catch{}}else if(back){const close=document.createElement('button');close.textContent=language==='zh'?'返回':'Back';close.onclick=back;page.append(close);}host.replaceChildren(page);
+}
+
+export function profileAppLink(hash:string){parsePublicProfile(hash);return 'softroom://profile/#'+hash.replace(/^#/,'');}
+export function profileHashFromAppUrl(value:string){try{const url=new URL(value);if(url.protocol!=='softroom:'||url.hostname!=='profile'||url.username||url.password||url.port||url.search||!['','/'].includes(url.pathname))return;parsePublicProfile(url.hash);return url.hash;}catch{return;}}
+export function showProfileDialog(hash:string,language:'zh'|'en'){
+ document.getElementById('public-profile-dialog')?.remove();
+ const dialog=document.createElement('dialog');dialog.id='public-profile-dialog';dialog.className='sheet';
+ const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label',language==='zh'?'关闭':'Close');close.onclick=()=>dialog.close();
+ const content=document.createElement('div');content.className='profile-preview';const name=document.createElement('h1');try{name.textContent=parsePublicProfile(hash).name;}catch{name.textContent=language==='zh'?'链接无效':'Invalid link';}content.append(name);dialog.append(close,content);document.body.append(dialog);dialog.addEventListener('close',()=>dialog.remove());dialog.showModal();return dialog;
 }
