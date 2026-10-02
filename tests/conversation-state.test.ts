@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {emptyConversation,validateConversation,mergeConversation,nearestMessage,compareMessages,searchMessages,sealConversations,openConversations,BackgroundQueue} from '../src/conversation-state.ts';
+import {nextRulesTime,emptyConversation,validateConversation,mergeConversation,nearestMessage,compareMessages,searchMessages,sealConversations,openConversations,BackgroundQueue} from '../src/conversation-state.ts';
 import {makeIdentity,makeRoom,seal,type Message} from '../src/protocol.ts';
 import {sealDirect,openDirect} from '../src/dm.ts';
 const id='room:'+'a'.repeat(64),sender='b'.repeat(64),mid=(n:number)=>n.toString(16).padStart(32,'0');
@@ -24,3 +24,5 @@ test('background queue rotates unopened rooms, coalesces Inbox, and defers the o
 test('DM Store history accepts authenticated old messages without relaxing live freshness',()=>{
  const a=makeIdentity(),b=makeIdentity(),p=sealDirect(a,b.publicKey,'old'),now=p.message.time+365*86400000;assert.throws(()=>openDirect(b,p.payload,now));assert.equal(openDirect(b,p.payload,now,true).text,'old');assert.throws(()=>openDirect(makeIdentity(),p.payload,now,true));
 });
+
+test('explicit rule edits advance beyond a future timestamp from another device',()=>{const state={...emptyConversation(id),rulesAt:2000};assert.equal(nextRulesTime(state,1000),2001);});

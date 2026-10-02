@@ -37,3 +37,5 @@ export class BackgroundQueue{
  defer(id:string){this.pending=this.pending.filter(x=>x!==id);this.pending.push(id);}
  next(active?:string){const id=this.pending.find(x=>x!==active);if(id)this.defer(id);return id;}
 }
+
+export function nextRulesTime(state:ConversationState,now=Date.now()){return Math.max(now,state.rulesAt+1);}

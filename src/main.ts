@@ -1,5 +1,7 @@
+import {mountMessageActions} from './message-actions.ts';
+import {applyAppearance,readAppearance,type ColorMode} from './appearance.ts';
 import {mountConversationTools} from './conversation-ui.ts';
-import {BackgroundQueue,emptyConversation,validateConversation,mergeConversations,visibleMessage,compareMessages,nearestMessage,searchMessages,sealConversations,openConversations,type ConversationState,type ReadingPosition} from './conversation-state.ts';
+import {nextRulesTime,BackgroundQueue,emptyConversation,validateConversation,mergeConversations,visibleMessage,compareMessages,nearestMessage,searchMessages,sealConversations,openConversations,type ConversationState,type ReadingPosition} from './conversation-state.ts';
 import {encodePublicProfile,showProfileDialog} from './public-profile.ts';
 import {loadSidebarOrder,saveSidebarOrder,orderSidebarIds,sortableSidebar} from './sidebar-order.ts';
 import {inboxId,inboxRoom,directRoom,sealDirect,openDirect,type Contact,type DirectMessage,type DirectContent} from './dm.ts';
@@ -56,7 +58,7 @@ function restoreReadingPosition(){if(!pendingPosition||searchQuery)return;const 
 let conversationTools:ReturnType<typeof mountConversationTools>|undefined;
 
 const iceProvider=createIceProvider(import.meta.env.VITE_TURN_CREDENTIALS_URL,fetch,Date.now,()=>session.identity,()=>meshPanel.render(),storage);
-session.theme ??= 'soft';
+const appearance=readAppearance();session.theme=appearance?.theme||session.theme||'soft';session.colorMode=appearance?.mode||session.colorMode||'system';
 const t=(key:TextKey,params:Record<string,string|number>={})=>translate(session.language,key,params);
 let historyState:'idle'|'loading'|'error'='idle';
 const channelMemory=new Map<string,Map<string,Network>>();
@@ -123,7 +125,7 @@ identityPanel.innerHTML='<span class="pill" data-i18n="temporaryIdentity"></span
 identityPanel.append(document.querySelector('.session-banner')!);
 const preferences=document.createElement('details');preferences.className='preferences';preferences.innerHTML='<summary data-i18n="preferences"></summary>';
 for(const id of ['skin','language']){const label=document.createElement('label');label.htmlFor=id;label.dataset.i18n=id;preferences.append(label,$(id));}
-identityPanel.append(preferences);
+const appearanceLabel=document.createElement('label');appearanceLabel.id='appearance-label';appearanceLabel.htmlFor='appearance';const appearanceSelect=document.createElement('select');appearanceSelect.id='appearance';appearanceSelect.innerHTML='<option value="light">Light</option><option value="dark">Dark</option><option value="system">System</option>';appearanceSelect.onchange=()=>{session.colorMode=appearanceSelect.value as ColorMode;save();languageChanged();};preferences.append(appearanceLabel,appearanceSelect);identityPanel.append(preferences);
 const nicknamePanel=makeDialog('nickname-dialog','roomIdentity');
 nicknamePanel.innerHTML='<p id="nickname-room" class="scope-title"></p><p id="global-name-context" class="scope-hint"></p>';
 nicknamePanel.append($('nickname-form'));
@@ -172,7 +174,7 @@ const mobileLayout=matchMedia('(max-width:760px)');toggleSidebar(!mobileLayout.m
 function openNew(){ $('form-feedback').textContent='';showPanel('new-dialog');}
 $('new-room').onclick=openNew;
 $('my-identity').onclick=()=>{$('profile-share-result').hidden=true;$<HTMLInputElement>('global-name').value=session.name||'';$('identity-feedback').textContent='';$('recovery-file-feedback').textContent='';showPanel('identity-dialog');};
-$('profile-share').onclick=()=>{const name=session.name||t('visitor',{id:session.identity.publicKey.slice(0,8)}),code=encodePublicProfile(session.identity,name),link=invitationLink(code,nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);$<HTMLTextAreaElement>('public-profile-link').value=link;$('public-profile-open').onclick=()=>showProfileDialog(code,session.language);$('public-profile-feedback').textContent='';$('profile-share-result').hidden=false;};
+$('profile-share').onclick=()=>{const name=session.name||t('visitor',{id:session.identity.publicKey.slice(0,8)}),code=encodePublicProfile(session.identity,name),link=invitationLink(code,nativeApp(),import.meta.env.VITE_PUBLIC_ORIGIN,location.href);$<HTMLTextAreaElement>('public-profile-link').value=link;$('public-profile-open').onclick=()=>{const account=activeProfile();showProfileDialog(code,session.language,account?{account:account.label,accountId:account.id,rooms:session.rooms.length,contacts:session.contacts?.length||0,conversations:session.states?.length||0}:undefined);};$('public-profile-feedback').textContent='';$('profile-share-result').hidden=false;};
 $('public-profile-copy').onclick=async()=>{const input=$<HTMLTextAreaElement>('public-profile-link');try{await copyText(input.value);$('public-profile-feedback').textContent=t('copied');}catch{input.focus();input.select();$('public-profile-feedback').textContent=t('copyFallback');}};
 $('room-me').onclick=()=>{if(active){$('nickname-room').textContent=t('inRoom',{name:active.room.name});$('global-name-context').textContent=t('globalContext',{name:session.name||t('visitor',{id:session.identity.publicKey.slice(0,8)})});$('nickname-feedback').textContent='';showPanel('nickname-dialog');}};
 $('room-members').onclick=()=>{renderMembers();showPanel('members-dialog');};
@@ -374,7 +376,7 @@ function renderMessages(){
   if(m.kind==='heartbeat')continue;
   const own=m.sender===session.identity.publicKey,row=document.createElement('article');row.className='message-row'+(own?' own':'');row.dataset.message=m.id;
   const meta=document.createElement('div');meta.className='meta';meta.textContent=`${m.nickname?m.nickname+' · '+m.sender.slice(0,8):t('visitor',{id:m.sender.slice(0,8)})}${own?' · '+t('you'):''}  ${new Date(m.time).toLocaleTimeString(session.language==='zh'?'zh-CN':'en-US',{hour:'2-digit',minute:'2-digit'})}`;
-  const profile=document.createElement('button');profile.className='sender-profile';profile.textContent=meta.textContent;profile.onclick=()=>openProfile(m.sender,m.nickname);meta.replaceChildren(profile);const hide=document.createElement('button');hide.className='message-hide';hide.textContent='×';hide.setAttribute('aria-label',session.language==='zh'?'屏蔽消息':'Hide message');hide.onclick=()=>{const state=conversationState(currentConversation()!);if(state.hidden.length>=256)return;state.hidden=[...new Set([...state.hidden,m.id])];state.rulesAt=Date.now();save();renderMessages();};meta.append(hide);row.append(meta);
+  const profile=document.createElement('button');profile.className='sender-profile';profile.textContent=meta.textContent;profile.onclick=()=>openProfile(m.sender,m.nickname);meta.replaceChildren(profile);row.tabIndex=0;row.setAttribute('aria-haspopup','dialog');row.append(meta);
   if(m.kind==='file'&&m.file)row.append(attachmentView(activeDM?{...chatRoom()!,inbox:(m as DirectMessage).recipient}:chatRoom()!,m.file,t));else{const bubble=document.createElement('p');bubble.textContent=m.text;row.append(bubble);}
   log.append(row);
  }
@@ -397,8 +399,9 @@ async function loadHistory(saved:SavedRoom,transport:NonNullable<typeof connecti
 }
 function languageChanged(){
  renderHistory();
- document.documentElement.dataset.theme=session.theme;
- document.querySelector('meta[name="theme-color"]')?.setAttribute('content',session.theme==='sssp'?'#e0e4e7':session.theme==='kabutack'?'#eee9e2':'#e7ebe7');
+ applyAppearance(session.theme||'soft',session.colorMode||'system');
+ $('appearance-label').textContent=session.language==='zh'?'显示模式':'Color mode';$<HTMLSelectElement>('appearance').value=session.colorMode||'system';$<HTMLSelectElement>('appearance').options[2].textContent=session.language==='zh'?'跟随系统':'System';
+
  document.documentElement.lang=session.language==='zh'?'zh-CN':'en';document.title=session.language==='zh'?'Soft Room · 随便聊聊':'Soft Room · Just chatting';
  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n as TextKey));
  for(const [data,attr] of [['placeholder','placeholder'],['label','aria-label'],['title','title']] as const)document.querySelectorAll<HTMLElement>(`[data-${data}]`).forEach(el=>el.setAttribute(attr,t(el.dataset[data] as TextKey)));
@@ -548,7 +551,7 @@ function mountHistoryFeatures(){
   sync:async()=>{await flushPersistentState();const restored=await refreshPersistentState(session.language);if(!restored)throw Error('Unavailable');session.states=mergeConversations(session.states||[],restored.states||[]);session.rooms=restored.rooms;session.contacts=restored.contacts;session.name=restored.name;save();languageChanged();},
   reset:async()=>{await flushPersistentState();const contents=await resetRecoveryFile();const {downloadRecovery}=await import('./persistent/startup.ts');if(!await downloadRecovery(contents))throw Error('Recovery reset; download pending');},
   openChannel:network=>{$('room-network').click();document.querySelector<HTMLButtonElement>(`.channel-card[data-network="${network.id}"]`)?.click();}});
- const log=$('messages');log.addEventListener('scroll',deferReadingSave,{passive:true});for(const event of ['wheel','touchstart','pointerdown'])log.addEventListener(event,()=>{pendingPosition=undefined;},{passive:true});window.addEventListener('pagehide',captureReadingPosition);
- const block=document.createElement('button');block.id='profile-block';block.className='danger';block.textContent=session.language==='zh'?'屏蔽此用户':'Block user';block.onclick=()=>{const id=currentConversation(),key=$('profile-key').textContent;if(!id||!key||key===session.identity.publicKey)return;const state=conversationState(id);if(state.blocked.length>=64)return;state.blocked=[...new Set([...state.blocked,key])];state.rulesAt=Date.now();save();closePanels();renderMessages();};profilePanel.append(block);
+ const log=$('messages');mountMessageActions(log,()=>session.language,id=>{const current=currentConversation();if(!current)return;const state=conversationState(current);if(state.hidden.length>=256)return;state.hidden=[...new Set([...state.hidden,id])];state.rulesAt=nextRulesTime(state);save();renderMessages();});log.addEventListener('scroll',deferReadingSave,{passive:true});for(const event of ['wheel','touchstart','pointerdown'])log.addEventListener(event,()=>{pendingPosition=undefined;},{passive:true});window.addEventListener('pagehide',captureReadingPosition);
+ const block=document.createElement('button');block.id='profile-block';block.className='danger';block.textContent=session.language==='zh'?'屏蔽此用户':'Block user';block.onclick=()=>{const id=currentConversation(),key=$('profile-key').textContent;if(!id||!key||key===session.identity.publicKey)return;const state=conversationState(id);if(state.blocked.length>=64)return;state.blocked=[...new Set([...state.blocked,key])];state.rulesAt=nextRulesTime(state);save();closePanels();renderMessages();};profilePanel.append(block);
  setTimeout(()=>void backgroundCheck(),8000);setInterval(()=>void backgroundCheck(),20000);
 }

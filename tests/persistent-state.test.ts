@@ -65,3 +65,12 @@ test('encrypted conversation archive merges reading and filters across devices a
  const state=(await b.loadConversations())[0];assert.deepEqual(state.blocked,['b'.repeat(64)]);assert.deepEqual(state.seen,['c'.repeat(32)]);assert(!JSON.stringify(await remote.list(CONVERSATION_COLLECTION)).includes(id));
  remote.offline=true;await assert.rejects(a.saveConversation({...state,rulesAt:40,since:123}));remote.offline=false;await new PortableStateRepository(key,localA,remote).pull();await b.pull();assert.equal((await b.loadConversations())[0].since,123);
 });
+
+test('an overlapping archive refresh cannot reinstate a message hidden before an explicit restore',async()=>{
+ const {emptyConversation}=await import('../src/conversation-state.ts');const {CONVERSATION_COLLECTION}=await import('../src/persistent/portable-state.ts');
+ let unblock!:()=>void,entered!:()=>void;const gate=new Promise<void>(r=>unblock=r),started=new Promise<void>(r=>entered=r);
+ class DelayedStore extends MemoryStore{delay=false;override async list(c:string){const rows=await super.list(c);if(c===CONVERSATION_COLLECTION&&this.delay){this.delay=false;entered();await gate;}return rows;}}
+ const key=await generateMasterKey(),remote=new DelayedStore(),local=new MemoryStore(),repo=new PortableStateRepository(key,local,remote),base=emptyConversation('room:'+'a'.repeat(64));await repo.saveConversation(base);
+ repo.setRemote(undefined);await repo.saveConversation({...base,hidden:['b'.repeat(32)],rulesAt:10});repo.setRemote(remote);remote.delay=true;
+ const refresh=repo.pull();await started;const restore=repo.saveConversation({...base,rulesAt:20});await new Promise(r=>setTimeout(r,30));unblock();await Promise.all([refresh,restore]);await repo.pull();assert.deepEqual((await repo.loadConversations())[0].hidden,[]);
+});

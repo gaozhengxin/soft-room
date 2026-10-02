@@ -113,7 +113,7 @@ export function mountMeshPanel(o:Options){
   if(view==='none')return;
   $('channel-create-view').hidden=view!=='create';$('channel-session').hidden=view!=='channel';$('channel-feedback').textContent=error?o.t(error):'';
   $('channel-back').setAttribute('aria-label',o.t(view==='create'?'channelCreateBack':'channelBack'));
-  if(view==='create'){$('channel-title').textContent=o.t('meshCreate');$('channel-mode-label').textContent=o.t('meshTitle');$<HTMLButtonElement>('channel-create').querySelector('button')!.disabled=!o.canJoin();return;}
+  if(view==='create'){delete page.dataset.mode;$('channel-title').textContent=o.t('meshCreate');$('channel-mode-label').textContent=o.t('meshTitle');$<HTMLButtonElement>('channel-create').querySelector('button')!.disabled=!o.canJoin();return;}
   if(!mesh||!focusedNetwork)return;
   focusedNetwork=mesh.getNetwork(focusedNetwork.id)||focusedNetwork;
   const enabled=channelEnabled(focusedNetwork),joined=mesh.membership?.network.id===focusedNetwork.id;

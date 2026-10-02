@@ -5,12 +5,15 @@ import {App} from '@capacitor/app';
 import {profileHashFromAppUrl,showPublicProfile,showProfileDialog} from './public-profile.ts';
 import './style.css';
 import './sssp.css';
+import './kabutack.css';
 import './access.css';
+import './appearance.css';
+import {initAppearance} from './appearance.ts';
 import {browserLanguage,terminal,localAddress,blockedCountry,parseTrace,accessCodeDigest,validAccessDigest} from './access.ts';
 import {REGION_BYPASS_STORAGE_KEY,regionBypassed} from './region-bypass.ts';
 const language=browserLanguage(navigator.languages?.length?navigator.languages:[navigator.language]);
 const info=terminal(navigator.userAgent,navigator.maxTouchPoints);
-document.documentElement.lang=language==='zh'?'zh-CN':'en';document.documentElement.dataset.theme='soft';
+document.documentElement.lang=language==='zh'?'zh-CN':'en';initAppearance();
 const native=nativeApp();
 document.documentElement.dataset.device=info.device;document.documentElement.dataset.runtime=native?'app':'web';document.documentElement.dataset.platform=native?Capacitor.getPlatform():info.platform;
 if(native&&Capacitor.getPlatform()==='android'){
