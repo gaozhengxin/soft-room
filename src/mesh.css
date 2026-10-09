@@ -34,6 +34,7 @@
 @media(prefers-reduced-motion:reduce){#channel-hold{transition:none}#channel-hold[aria-pressed=true]{transform:none}#channel-hold[aria-pressed=true]::before{animation:none}}
 
 /* Video stage layouts: preparation, pair, adaptive grid and spotlight. */
+#channel-people.video-stage{display:grid;gap:10px}
 .channel-person{touch-action:none;user-select:none;-webkit-user-select:none;transition:transform .16s,box-shadow .16s,opacity .16s}
 .channel-person[data-dragging=true]{opacity:.7;transform:scale(.98);z-index:3}
 .channel-avatar{position:absolute;inset:0;z-index:1;display:grid;place-items:center;background:linear-gradient(145deg,#35513f,#1d3025);color:#fff}
@@ -46,7 +47,7 @@
 .video-stage[data-count="2"][data-layout=spotlight] .channel-person:not([data-focus=true]){grid-column:2;grid-row:1}
 .video-stage[data-layout=spotlight]{grid-template-columns:minmax(0,1.72fr) repeat(var(--spot-columns,1),minmax(0,.72fr));grid-template-rows:repeat(var(--spot-rows,1),minmax(0,1fr))}
 .video-stage[data-layout=spotlight] .channel-person[data-focus=true]{grid-column:1;grid-row:1/-1;box-shadow:var(--inset),0 0 0 2px color-mix(in srgb,var(--green) 65%,transparent)}
-.video-stage[data-layout=spotlight] .channel-person:not([data-focus=true]){grid-column:2;grid-row:auto}
+.video-stage[data-layout=spotlight] .channel-person:not([data-focus=true]){grid-column:auto;grid-row:auto}
 #channel-stage:fullscreen{padding:0;background:#000}
 #channel-stage:fullscreen #channel-people{height:100dvh}
 #channel-fullscreen{position:absolute;top:20px;right:28px;z-index:5;width:38px;height:38px;min-width:38px;justify-content:center;border-radius:12px;background:color-mix(in srgb,#000 48%,transparent);color:#fff;box-shadow:0 4px 14px #0005}
@@ -61,5 +62,5 @@
  .video-stage[data-count="2"][data-layout=spotlight] .channel-person:not([data-focus=true]){grid-column:1;grid-row:2}
  .video-stage[data-layout=spotlight]{grid-template-columns:repeat(var(--spot-columns,1),minmax(0,1fr));grid-template-rows:minmax(0,1.58fr) repeat(var(--spot-rows,1),minmax(0,.62fr))}
  .video-stage[data-layout=spotlight] .channel-person[data-focus=true]{grid-column:1/-1;grid-row:1}
- .video-stage[data-layout=spotlight] .channel-person:not([data-focus=true]){grid-column:1;grid-row:auto}
+ .video-stage[data-layout=spotlight] .channel-person:not([data-focus=true]){grid-column:auto;grid-row:auto}
 }
