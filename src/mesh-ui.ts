@@ -8,6 +8,8 @@ import micIcon from './icons/mic.svg?raw';
 import videoIcon from './icons/video.svg?raw';
 import screenIcon from './icons/monitor-up.svg?raw';
 import blurIcon from './icons/sparkles.svg?raw';
+import maximizeIcon from './icons/maximize.svg?raw';
+import minimizeIcon from './icons/minimize.svg?raw';
 import radioIcon from './icons/radio.svg?raw';
 import backIcon from './icons/arrow-left.svg?raw';
 import leaveIcon from './icons/log-out.svg?raw';
@@ -29,18 +31,33 @@ export function mountMeshPanel(o:Options){
  const $=<T extends HTMLElement=HTMLElement>(id:string)=>page.querySelector<T>('#'+id)!;
  const list=dialog.querySelector<HTMLElement>('#mesh-networks')!,feedback=dialog.querySelector<HTMLElement>('#mesh-feedback')!;
  let view:'none'|'create'|'channel'='none',token='',listSnapshot='',textSnapshot='',error:TextKey|undefined;
- let tileOrder:string[]=[],focusKey:string|undefined,dragKey:string|undefined;
+ let tileOrder:string[]=[],focusKey:string|undefined,dragKey:string|undefined,spotlight=false;
  let advancedChannel='';
  let focusedNetwork:Network|undefined;
  let inertBefore=new Map<HTMLElement,boolean>();
  const media=new ChannelMedia(()=>o.getMesh(),()=>render());
  const mediaNodes=new Map<string,{root:HTMLElement;video:HTMLVideoElement;audio:HTMLAudioElement;avatar:HTMLElement;name:HTMLElement;state:HTMLElement}>();
+ const stage=$('channel-stage'),people=$('channel-people'),fullscreenButton=$('channel-fullscreen');
+ const stageMetrics=()=>{
+  const rect=people.getBoundingClientRect(),width=Math.max(1,rect.width),height=Math.max(1,rect.height);
+  const columns=Math.max(1,Math.min(6,Math.round(Math.sqrt(Math.max(1,people.children.length)*Math.max(.55,Math.min(2.4,width/Math.max(1,height)))))));
+  people.style.setProperty('--grid-columns',String(columns));
+  people.style.setProperty('--grid-rows',String(Math.ceil(people.children.length/columns)));
+  const small=Math.max(0,people.children.length-1),portrait=height>width;
+  const spotColumns=Math.min(4,portrait?small>4?2:1:small<=1?1:small<=4?small:small<=8?2:small<=12?3:4);
+  people.style.setProperty('--spot-columns',String(Math.max(1,spotColumns)));
+  people.style.setProperty('--spot-rows',String(Math.max(1,Math.ceil(small/spotColumns))));
+  people.dataset.spotColumns=String(spotColumns);
+ };
+ const stageObserver=new ResizeObserver(stageMetrics);
+ stageObserver.observe(people);
+ document.addEventListener('fullscreenchange',()=>{const active=document.fullscreenElement===stage;fullscreenButton.innerHTML=active?minimizeIcon:maximizeIcon;fullscreenButton.dataset.active=String(active);});
  function finish(showList=false,leave=false){
   view='none';
  if(leave){media.stop();o.getMesh()?.leave();
   for(const item of mediaNodes.values()){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;}mediaNodes.clear();$('channel-people').replaceChildren();
   advancedChannel='';$<HTMLInputElement>('channel-turn-password').value='';
-  tileOrder=[];focusKey=undefined;dragKey=undefined;
+  tileOrder=[];focusKey=undefined;dragKey=undefined;spotlight=false;
   }
   page.hidden=true;for(const [node,value] of inertBefore)node.inert=value;inertBefore.clear();
   $('channel-messages').replaceChildren();$<HTMLTextAreaElement>('channel-text').value='';textSnapshot='';error=undefined;
@@ -87,6 +104,7 @@ export function mountMeshPanel(o:Options){
  const startVideoMode=async()=>{try{error=undefined;await media.startVideo();}catch{error='channelMediaError';}render();};
  $('channel-blur').onclick=()=>{void media.toggleBlur().catch(()=>{error='channelMediaError';render();});render();};
  $('channel-screen').onclick=()=>{void media.toggleScreen().catch(()=>{error='channelScreenError';render();});render();};
+ fullscreenButton.onclick=()=>{if(document.fullscreenElement===stage)void document.exitFullscreen().catch(()=>{});else void stage.requestFullscreen?.({navigationUI:'hide'}).catch(()=>{});};
  const hold=$('channel-hold');hold.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();hold.setPointerCapture(e.pointerId);void media.hold().catch(()=>{error='channelMediaError';render();});};
  hold.onpointerup=()=>media.release();hold.onpointercancel=()=>media.release();hold.onlostpointercapture=()=>media.release();hold.oncontextmenu=e=>e.preventDefault();
  hold.onkeydown=e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();void media.hold().catch(()=>{error='channelMediaError';render();});}};hold.onkeyup=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();media.release();}};
@@ -97,7 +115,7 @@ export function mountMeshPanel(o:Options){
  const el=(tag:string,text:string)=>{const node=document.createElement(tag);node.textContent=text;return node;};
  function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=$<HTMLButtonElement>(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.dataset.text=o.t(key);}button.title=o.t(key);button.setAttribute('aria-label',o.t(key));button.setAttribute('aria-pressed',String(enabled));}
  function renderPeople(mesh:RoomMesh,mode:ChannelMode){
-  const peers=mesh.peerViews(),holder=$('channel-people');holder.classList.toggle('video-grid',mode==='video');
+  const peers=mesh.peerViews(),holder=people;holder.classList.toggle('video-stage',mode==='video');
   const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video}))];
   for(const entry of entries)if(!tileOrder.includes(entry.key))tileOrder.push(entry.key);
   tileOrder=tileOrder.filter(key=>entries.some(entry=>entry.key===key));
@@ -111,17 +129,20 @@ export function mountMeshPanel(o:Options){
    tileOrder.splice(to,0,...tileOrder.splice(from,1));render();
   };
   for(const entry of entries){let item=mediaNodes.get(entry.key);if(!item){const root=document.createElement('article');root.className='channel-person';root.dataset.key=entry.key;const video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;const audio=document.createElement('audio');audio.autoplay=true;audio.muted=entry.key==='self';video.setAttribute('playsinline','');const avatar=document.createElement('div');avatar.className='channel-avatar';avatar.append(el('span',entry.label));const name=el('strong',''),state=el('small','');root.append(avatar,video,audio,name,state);
-   root.ondblclick=()=>{focusKey=focusKey===entry.key?undefined:entry.key;render();};
+   root.ondblclick=()=>{if(spotlight&&focusKey===entry.key){spotlight=false;focusKey=undefined;}else{spotlight=true;focusKey=entry.key;}render();};
    root.onpointerdown=event=>{if(event.pointerType==='mouse'&&event.button!==0)return;dragKey=entry.key;root.dataset.dragging='true';root.setPointerCapture(event.pointerId);};
    root.onpointermove=event=>moveTile(entry.key,root,event);
    const stopDrag=(event:PointerEvent)=>{if(dragKey!==entry.key)return;dragKey=undefined;delete root.dataset.dragging;try{root.releasePointerCapture(event.pointerId);}catch{}};
    root.onpointerup=stopDrag;root.onpointercancel=stopDrag;
    holder.append(root);item={root,video,audio,avatar,name,state};mediaNodes.set(entry.key,item);}
-   item.root.dataset.state=entry.connectionState;item.root.dataset.focus=String(focusKey===entry.key);item.name.textContent=entry.label;item.state.textContent=entry.state;item.video.hidden=mode!=='video'||!entry.video;item.avatar.hidden=mode==='video'&&!!entry.video;
+   item.root.dataset.state=entry.connectionState;item.root.dataset.focus=String(spotlight&&focusKey===entry.key);item.name.textContent=entry.label;item.state.textContent=entry.state;item.video.hidden=mode!=='video'||!entry.video;item.avatar.hidden=mode==='video'&&!!entry.video;
    let stream=entry.stream;if(entry.key==='self'){const track=mesh.localTracks.video;const old=item.video.srcObject as MediaStream|null;stream=track?(old?.getVideoTracks()[0]===track?old:new MediaStream([track])):undefined;}
    if(item.video.srcObject!==(stream||null)){item.video.srcObject=stream||null;if(stream)void item.video.play().catch(()=>{});}
    const sound=entry.key==='self'?null:entry.stream||null;if(item.audio.srcObject!==sound){item.audio.srcObject=sound;if(sound)void item.audio.play().catch(()=>{if(view==='channel')$('channel-play').hidden=false;});}
   }
+  holder.dataset.count=String(entries.length);holder.dataset.layout=spotlight&&entries.length>1?'spotlight':'grid';holder.dataset.preparing=String(entries.length===1);if(!spotlight||entries.length<2)focusKey=undefined;
+  if(focusKey&&!entries.some(entry=>entry.key===focusKey)){focusKey=undefined;spotlight=false;}
+  stageMetrics();
  }
  function render(){
   const mesh=o.getMesh(),groups=mesh?.networks()||[];
@@ -143,6 +164,7 @@ export function mountMeshPanel(o:Options){
   const enabled=channelEnabled(focusedNetwork),joined=mesh.membership?.network.id===focusedNetwork.id;
   $('channel-state').textContent=o.t(enabled?'channelOn':'channelOff');
   $('channel-leave').title=o.t('meshLeave');$('channel-leave').setAttribute('aria-label',o.t('meshLeave'));
+  fullscreenButton.title=o.t(document.fullscreenElement===stage?'channelExitFullscreen':'channelFullscreen');fullscreenButton.setAttribute('aria-label',fullscreenButton.title);
   $('channel-power').hidden=!o.isSelf(focusedNetwork.creator);$('channel-power').textContent=o.t(enabled?'channelSwitchOff':'channelSwitchOn');$<HTMLButtonElement>('channel-power').disabled=!o.canJoin();$('channel-power').setAttribute('aria-pressed',String(enabled));
   $('channel-leave').hidden=!joined;
   for(const id of ['channel-advanced','channel-people','channel-messages','channel-composer'])$(id).hidden=!joined;
