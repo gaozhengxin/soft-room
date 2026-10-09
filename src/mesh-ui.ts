@@ -8,9 +8,9 @@ import micIcon from './icons/mic.svg?raw';
 import videoIcon from './icons/video.svg?raw';
 import screenIcon from './icons/monitor-up.svg?raw';
 import blurIcon from './icons/sparkles.svg?raw';
-import layoutIcon from './icons/layout.svg?raw';
 import radioIcon from './icons/radio.svg?raw';
 import backIcon from './icons/arrow-left.svg?raw';
+import leaveIcon from './icons/log-out.svg?raw';
 type Options={host:Element;button:HTMLButtonElement;t:(key:TextKey,params?:Record<string,string|number>)=>string;getMesh:()=>RoomMesh|undefined;canJoin:()=>boolean;name:(key:string)=>string;selfName:()=>string;isSelf:(key:string)=>boolean};
 const holdIcon=`<span class="hold-art" aria-hidden="true"><span class="hold-sage">${micIcon}</span><svg class="hold-patrol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"><path d="M32 5 39 23 57 30 39 37 32 57 25 37 7 30 25 23Z"/><path d="m14 49 36-36M19 52l33-33"/><circle cx="32" cy="30" r="7"/></svg><svg class="hold-beetle" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M32 30V10m0 8L21 9V4m11 14L43 9V4M24 28l-9-6m25 6 9-6"/><path d="M32 27c-12 0-20 9-20 20l10 12h20l10-12c0-11-8-20-20-20Z"/><path d="M32 29v28M15 43l13 5m21-5-13 5"/><path d="m27 35 5-4 5 4-5 5Z"/></svg></span>`;
 const modes:ChannelMode[]=['voice','video','walkie'];
@@ -24,12 +24,12 @@ export function mountMeshPanel(o:Options){
  const page=document.createElement('section');page.id='channel-page';page.className='channel-page';page.hidden=true;
  page.innerHTML=`<header class="channel-head"><button id="channel-back" class="icon-button">${backIcon}</button><div><small id="channel-mode-label"></small><h2 id="channel-title"></h2></div></header>
  <section id="channel-create-view"><form id="channel-create"><label for="channel-name" data-i18n="meshName"></label><input id="channel-name" maxlength="32" autocomplete="off" required/><fieldset><legend data-i18n="channelMode"></legend>${modes.map((mode,i)=>`<label class="channel-mode"><input type="radio" name="mode" value="${mode}" ${i===0?'checked':''}/><span>${modeIcon(mode)}<strong data-i18n="${modeKey(mode)}"></strong><small data-i18n="${mode==='voice'?'channelVoiceHint':mode==='video'?'channelVideoHint':'channelWalkieHint'}"></small></span></label>`).join('')}</fieldset><p data-i18n="channelMediaOff"></p><button class="primary" data-i18n="channelStart"></button></form></section>
- <section id="channel-session"><div class="channel-actions"><span id="channel-state"></span><button id="channel-power" type="button" hidden></button><button id="channel-leave" type="button" data-i18n="meshLeave"></button></div><p id="channel-connection" role="status"></p><p id="channel-relay-work" role="status" hidden><span class="relay-spinner"></span><span id="channel-relay-label"></span></p><details id="channel-advanced"><summary data-i18n="channelAdvanced"></summary><form id="channel-turn-form"><label><input id="channel-custom-turn" type="checkbox"/><span data-i18n="channelCustomTurn"></span></label><p data-i18n="channelCustomTurnHint"></p><div id="channel-turn-fields" hidden><label for="channel-turn-urls" data-i18n="channelTurnUrls"></label><textarea id="channel-turn-urls" rows="2" placeholder="turns:relay.example:443?transport=tcp"></textarea><label for="channel-turn-user" data-i18n="channelTurnUser"></label><input id="channel-turn-user" autocomplete="off"/><label for="channel-turn-password" data-i18n="channelTurnPassword"></label><input id="channel-turn-password" type="password" autocomplete="off"/></div><button type="submit" class="primary" data-i18n="channelTurnSave"></button><p id="channel-turn-status" role="status"></p></form></details><div id="channel-people"></div><button id="channel-play" data-i18n="channelPlay" hidden></button><div id="channel-messages" role="log" aria-live="polite"></div><div class="channel-media-controls"><button id="channel-layout"></button><button id="channel-mic"></button><button id="channel-camera"></button><button id="channel-blur"></button><button id="channel-screen"></button><button id="channel-hold"></button></div><form id="channel-composer"><label class="sr-only" for="channel-text" data-i18n="channelPlaceholder"></label><textarea id="channel-text" maxlength="2000" rows="1" data-placeholder="channelPlaceholder"></textarea><button class="primary" data-i18n="channelSend"></button></form><p class="channel-exit-note" data-i18n="meshOne"></p></section><p id="channel-feedback" role="status"></p>`;
+ <section id="channel-session"><div class="channel-actions"><span id="channel-state"></span><button id="channel-power" type="button" hidden></button><button id="channel-leave" class="icon-button" type="button">${leaveIcon}</button></div><p id="channel-connection" role="status"></p><p id="channel-relay-work" role="status" hidden><span class="relay-spinner"></span><span id="channel-relay-label"></span></p><details id="channel-advanced"><summary data-i18n="channelAdvanced"></summary><form id="channel-turn-form"><label><input id="channel-custom-turn" type="checkbox"/><span data-i18n="channelCustomTurn"></span></label><p data-i18n="channelCustomTurnHint"></p><div id="channel-turn-fields" hidden><label for="channel-turn-urls" data-i18n="channelTurnUrls"></label><textarea id="channel-turn-urls" rows="2" placeholder="turns:relay.example:443?transport=tcp"></textarea><label for="channel-turn-user" data-i18n="channelTurnUser"></label><input id="channel-turn-user" autocomplete="off"/><label for="channel-turn-password" data-i18n="channelTurnPassword"></label><input id="channel-turn-password" type="password" autocomplete="off"/></div><button type="submit" class="primary" data-i18n="channelTurnSave"></button><p id="channel-turn-status" role="status"></p></form></details><div id="channel-people"></div><button id="channel-play" data-i18n="channelPlay" hidden></button><div id="channel-messages" role="log" aria-live="polite"></div><div class="channel-media-controls"><button id="channel-mic"></button><button id="channel-camera"></button><button id="channel-blur"></button><button id="channel-screen"></button><button id="channel-hold"></button></div><form id="channel-composer"><label class="sr-only" for="channel-text" data-i18n="channelPlaceholder"></label><textarea id="channel-text" maxlength="2000" rows="1" data-placeholder="channelPlaceholder"></textarea><button class="primary" data-i18n="channelSend"></button></form><p class="channel-exit-note" data-i18n="meshOne"></p></section><p id="channel-feedback" role="status"></p>`;
  chat.append(page);
  const $=<T extends HTMLElement=HTMLElement>(id:string)=>page.querySelector<T>('#'+id)!;
  const list=dialog.querySelector<HTMLElement>('#mesh-networks')!,feedback=dialog.querySelector<HTMLElement>('#mesh-feedback')!;
  let view:'none'|'create'|'channel'='none',token='',listSnapshot='',textSnapshot='',error:TextKey|undefined;
- let videoLayout:'auto'|'spotlight'|'grid'|'stack'='auto',focusKey: string|undefined;
+ let tileOrder:string[]=[],focusKey:string|undefined,dragKey:string|undefined;
  let advancedChannel='';
  let focusedNetwork:Network|undefined;
  let inertBefore=new Map<HTMLElement,boolean>();
@@ -40,7 +40,7 @@ export function mountMeshPanel(o:Options){
  if(leave){media.stop();o.getMesh()?.leave();
   for(const item of mediaNodes.values()){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;}mediaNodes.clear();$('channel-people').replaceChildren();
   advancedChannel='';$<HTMLInputElement>('channel-turn-password').value='';
-  videoLayout='auto';focusKey=undefined;
+  tileOrder=[];focusKey=undefined;dragKey=undefined;
   }
   page.hidden=true;for(const [node,value] of inertBefore)node.inert=value;inertBefore.clear();
   $('channel-messages').replaceChildren();$<HTMLTextAreaElement>('channel-text').value='';textSnapshot='';error=undefined;
@@ -87,7 +87,6 @@ export function mountMeshPanel(o:Options){
  const startVideoMode=async()=>{try{error=undefined;await media.startVideo();}catch{error='channelMediaError';}render();};
  $('channel-blur').onclick=()=>{void media.toggleBlur().catch(()=>{error='channelMediaError';render();});render();};
  $('channel-screen').onclick=()=>{void media.toggleScreen().catch(()=>{error='channelScreenError';render();});render();};
- $('channel-layout').onclick=()=>{const modes=['auto','spotlight','grid','stack'] as const;videoLayout=modes[(modes.indexOf(videoLayout)+1)%modes.length];render();};
  const hold=$('channel-hold');hold.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();hold.setPointerCapture(e.pointerId);void media.hold().catch(()=>{error='channelMediaError';render();});};
  hold.onpointerup=()=>media.release();hold.onpointercancel=()=>media.release();hold.onlostpointercapture=()=>media.release();hold.oncontextmenu=e=>e.preventDefault();
  hold.onkeydown=e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();void media.hold().catch(()=>{error='channelMediaError';render();});}};hold.onkeyup=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();media.release();}};
@@ -96,12 +95,28 @@ export function mountMeshPanel(o:Options){
  $<HTMLFormElement>('channel-composer').onsubmit=e=>{e.preventDefault();const input=$<HTMLTextAreaElement>('channel-text');try{const count=o.getMesh()!.sendText(input.value,o.selfName());input.value='';error=undefined;render();$('channel-feedback').textContent=o.t('channelSent',{count});}catch{error='channelSendError';render();}};
  $('channel-text').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$<HTMLFormElement>('channel-composer').requestSubmit();}};
  const el=(tag:string,text:string)=>{const node=document.createElement(tag);node.textContent=text;return node;};
- function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=$<HTMLButtonElement>(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.append(el('span',o.t(key)));button.dataset.text=o.t(key);}button.setAttribute('aria-pressed',String(enabled));}
+ function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=$<HTMLButtonElement>(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.dataset.text=o.t(key);}button.title=o.t(key);button.setAttribute('aria-label',o.t(key));button.setAttribute('aria-pressed',String(enabled));}
  function renderPeople(mesh:RoomMesh,mode:ChannelMode){
-  const peers=mesh.peerViews(),holder=$('channel-people');holder.classList.toggle('video-grid',mode==='video');holder.dataset.layout=videoLayout;
+  const peers=mesh.peerViews(),holder=$('channel-people');holder.classList.toggle('video-grid',mode==='video');
   const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video}))];
+  for(const entry of entries)if(!tileOrder.includes(entry.key))tileOrder.push(entry.key);
+  tileOrder=tileOrder.filter(key=>entries.some(entry=>entry.key===key));
+  entries.sort((a,b)=>tileOrder.indexOf(a.key)-tileOrder.indexOf(b.key));
   for(const [key,item] of mediaNodes)if(!entries.some(e=>e.key===key)){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;item.root.remove();mediaNodes.delete(key);}
-  for(const entry of entries){let item=mediaNodes.get(entry.key);if(!item){const root=document.createElement('article');root.className='channel-person';root.dataset.key=entry.key;const video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;const audio=document.createElement('audio');audio.autoplay=true;audio.muted=entry.key==='self';video.setAttribute('playsinline','');const avatar=document.createElement('div');avatar.className='channel-avatar';avatar.append(el('span',entry.label));const name=el('strong',''),state=el('small','');root.append(avatar,video,audio,name,state);root.onclick=()=>{focusKey=focusKey===entry.key?undefined:entry.key;render();};holder.append(root);item={root,video,audio,avatar,name,state};mediaNodes.set(entry.key,item);}
+  const moveTile=(key:string,root:HTMLElement,event:PointerEvent)=>{
+   if(dragKey!==key)return;
+   const targetKey=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('.channel-person')?.dataset.key;
+   if(!targetKey||targetKey===key)return;
+   const from=tileOrder.indexOf(key),to=tileOrder.indexOf(targetKey);if(from<0||to<0)return;
+   tileOrder.splice(to,0,...tileOrder.splice(from,1));render();
+  };
+  for(const entry of entries){let item=mediaNodes.get(entry.key);if(!item){const root=document.createElement('article');root.className='channel-person';root.dataset.key=entry.key;const video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;const audio=document.createElement('audio');audio.autoplay=true;audio.muted=entry.key==='self';video.setAttribute('playsinline','');const avatar=document.createElement('div');avatar.className='channel-avatar';avatar.append(el('span',entry.label));const name=el('strong',''),state=el('small','');root.append(avatar,video,audio,name,state);
+   root.ondblclick=()=>{focusKey=focusKey===entry.key?undefined:entry.key;render();};
+   root.onpointerdown=event=>{if(event.pointerType==='mouse'&&event.button!==0)return;dragKey=entry.key;root.dataset.dragging='true';root.setPointerCapture(event.pointerId);};
+   root.onpointermove=event=>moveTile(entry.key,root,event);
+   const stopDrag=(event:PointerEvent)=>{if(dragKey!==entry.key)return;dragKey=undefined;delete root.dataset.dragging;try{root.releasePointerCapture(event.pointerId);}catch{}};
+   root.onpointerup=stopDrag;root.onpointercancel=stopDrag;
+   holder.append(root);item={root,video,audio,avatar,name,state};mediaNodes.set(entry.key,item);}
    item.root.dataset.state=entry.connectionState;item.root.dataset.focus=String(focusKey===entry.key);item.name.textContent=entry.label;item.state.textContent=entry.state;item.video.hidden=mode!=='video'||!entry.video;item.avatar.hidden=mode==='video'&&!!entry.video;
    let stream=entry.stream;if(entry.key==='self'){const track=mesh.localTracks.video;const old=item.video.srcObject as MediaStream|null;stream=track?(old?.getVideoTracks()[0]===track?old:new MediaStream([track])):undefined;}
    if(item.video.srcObject!==(stream||null)){item.video.srcObject=stream||null;if(stream)void item.video.play().catch(()=>{});}
@@ -127,6 +142,7 @@ export function mountMeshPanel(o:Options){
   focusedNetwork=mesh.getNetwork(focusedNetwork.id)||focusedNetwork;
   const enabled=channelEnabled(focusedNetwork),joined=mesh.membership?.network.id===focusedNetwork.id;
   $('channel-state').textContent=o.t(enabled?'channelOn':'channelOff');
+  $('channel-leave').title=o.t('meshLeave');$('channel-leave').setAttribute('aria-label',o.t('meshLeave'));
   $('channel-power').hidden=!o.isSelf(focusedNetwork.creator);$('channel-power').textContent=o.t(enabled?'channelSwitchOff':'channelSwitchOn');$<HTMLButtonElement>('channel-power').disabled=!o.canJoin();$('channel-power').setAttribute('aria-pressed',String(enabled));
   $('channel-leave').hidden=!joined;
   for(const id of ['channel-advanced','channel-people','channel-messages','channel-composer'])$(id).hidden=!joined;
@@ -136,12 +152,11 @@ export function mountMeshPanel(o:Options){
   if(advancedChannel!==mesh.membership.network.id){advancedChannel=mesh.membership.network.id;const custom=mesh.customTurn;$<HTMLInputElement>('channel-custom-turn').checked=!!custom;$('channel-turn-fields').hidden=!custom;$<HTMLTextAreaElement>('channel-turn-urls').value=custom?(Array.isArray(custom.urls)?custom.urls.join('\n'):custom.urls):'';$<HTMLInputElement>('channel-turn-user').value=custom?.username||'';$<HTMLInputElement>('channel-turn-password').value=typeof custom?.credential==='string'?custom.credential:'';$('channel-turn-status').textContent='';$<HTMLDetailsElement>('channel-advanced').open=false;}
   const work=mesh.relayWork;$('channel-relay-work').hidden=!work||!['requesting','mining','error'].includes(work.status);$('channel-relay-work').querySelector<HTMLElement>('.relay-spinner')!.hidden=work?.status==='error';$('channel-relay-label').textContent=o.t(work?.status==='error'?'channelRelayError':work?.status==='requesting'?'channelRelayPreparing':'channelRelayMining',{seconds:Math.floor((work?.elapsed||0)/1000)});
   const mode=channelMode(mesh.membership.network);$('channel-title').textContent=mesh.membership.network.name;$('channel-mode-label').textContent=o.t(modeKey(mode));page.dataset.mode=mode;
-  $('channel-mic').hidden=mode==='walkie';$('channel-camera').hidden=mode!=='video';$('channel-layout').hidden=mode!=='video';$('channel-blur').hidden=mode!=='video';$('channel-screen').hidden=mode!=='video';$('channel-hold').hidden=mode!=='walkie';
+  $('channel-mic').hidden=mode==='walkie';$('channel-camera').hidden=mode!=='video';$('channel-blur').hidden=mode!=='video'||media.screenSharing;$('channel-screen').hidden=mode!=='video';$('channel-hold').hidden=mode!=='walkie';
   labelButton('channel-mic',micIcon,mesh.localTracks.audio?'channelMicOff':'channelMicOn',!!mesh.localTracks.audio);
   labelButton('channel-camera',videoIcon,mesh.localTracks.video?'channelCameraOff':'channelCameraOn',!!mesh.localTracks.video);
   labelButton('channel-blur',blurIcon,media.blurEnabled?'channelBlurOff':'channelBlurOn',media.blurEnabled);
   labelButton('channel-screen',screenIcon,media.screenSharing?'channelScreenStop':'channelScreenStart',media.screenSharing);
-  labelButton('channel-layout',layoutIcon,('channelLayout'+videoLayout.charAt(0).toUpperCase()+videoLayout.slice(1)) as TextKey,true);
   labelButton('channel-hold',holdIcon,mesh.localTracks.audio?.enabled?'channelTalking':'channelHold',!!mesh.localTracks.audio?.enabled);
   const peers=mesh.peerViews(),connected=peers.filter(p=>p.state==='connected').length;
   $('channel-connection').textContent=o.t(!peers.length?'channelNoPeers':connected===peers.length?'channelConnectionReady':connected?'channelConnectionPartial':peers.some(p=>p.state==='failed')?'channelConnectionFailed':'channelConnectionWaiting',{count:connected,total:peers.length});

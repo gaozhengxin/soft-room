@@ -26,7 +26,7 @@ export class ChannelMedia {
    const track=stream.getTracks()[0];if(!track)throw Error('Capture unavailable');
    if(kind==='video')this.videoStream=stream;
    track.enabled=!hold||this.pressed;track.onended=()=>{if(mesh.localTracks[kind]===track)void mesh.setTrack(kind).catch(()=>{});this.changed();};
-   try{await mesh.setTrack(kind,track);}catch(error){track.stop();if(mesh.localTracks[kind]===track)await mesh.setTrack(kind).catch(()=>{});throw error;}this.changed();
+   try{await mesh.setTrack(kind,track,kind==='video');}catch(error){track.stop();if(mesh.localTracks[kind]===track)await mesh.setTrack(kind,undefined,kind==='video').catch(()=>{});throw error;}this.changed();
   }finally{this.pending.delete(kind);}
  }
  async startVideo(){
@@ -39,25 +39,25 @@ export class ChannelMedia {
   const mesh=this.getMesh();if(!mesh?.membership||this.pending.has('video'))return;this.pending.add('video');
   try{
    const source=this.videoStream?.getVideoTracks()[0];if(!source)throw Error('Camera unavailable');
-   if(this.blur){const previous=this.blur.track;this.blur.stop();this.blur=undefined;await mesh.setTrack('video',source);return;}
-   const blur=new BackgroundBlur(source);await blur.start();this.blur=blur;await mesh.setTrack('video',blur.track);
+   if(this.blur){this.blur.stop();this.blur=undefined;await mesh.setTrack('video',source,true);return;}
+   const blur=new BackgroundBlur(source);await blur.start();this.blur=blur;await mesh.setTrack('video',blur.track,true);
   }finally{this.pending.delete('video');}
  }
  async toggleScreen(){
   const mesh=this.getMesh();if(!mesh?.membership||this.pending.has('video'))return;this.pending.add('video');
   try{
-   if(this.screenStream){this.screenStream.getTracks().forEach(track=>track.stop());this.screenStream=undefined;await this.restoreVideo(mesh);return;}
+   if(this.screenStream){const oldScreen=this.screenStream;this.screenStream=undefined;await this.restoreVideo(mesh);oldScreen.getTracks().forEach(track=>track.stop());return;}
    if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable');
    this.blur?.stop();this.blur=undefined;
    const stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:15,max:30}},audio:false});this.screenStream=stream;
    const track=stream.getVideoTracks()[0];if(!track)throw Error('Screen capture unavailable');
    track.onended=()=>{void this.toggleScreen().catch(()=>{});};
-   await mesh.setTrack('video',track);
+   await mesh.setTrack('video',track,true);
   }finally{this.pending.delete('video');}
  }
  private async restoreVideo(mesh:RoomMesh){
   const active=this.blur?.track||this.videoStream?.getVideoTracks()[0];
-  if(active)await mesh.setTrack('video',active);else await mesh.setTrack('video');
+  if(active)await mesh.setTrack('video',active,true);else await mesh.setTrack('video',undefined,true);
  }
  async hold(){
   const mesh=this.getMesh();if(!mesh?.membership||channelMode(mesh.membership.network)!=='walkie')return;

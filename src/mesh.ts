@@ -92,9 +92,9 @@ export class RoomMesh {
  private closePeer(key:string){const p=this.peers.get(key);if(!p)return;this.peers.delete(key);p.pc.ontrack=null;p.pc.ondatachannel=null;p.pc.onconnectionstatechange=null;if(p.channel){p.channel.onopen=null;p.channel.onclose=null;p.channel.onmessage=null;p.channel.onerror=null;p.channel.close();}p.pc.close();}
  private closePeers(){for(const key of this.peers.keys())this.closePeer(key);}
  private clearChannel(){this.options.cancelIce?.();this.iceVersion++;this.iceFlight=undefined;this.iceCheckAt=0;this.iceConfiguration=undefined;this.closePeers();this.attempts.clear();for(const track of Object.values(this.tracks))track?.stop();this.tracks={};this.textLog=[];this.textIds.clear();}
- async setTrack(kind:'audio'|'video',track?:MediaStreamTrack){
+ async setTrack(kind:'audio'|'video',track?:MediaStreamTrack,keepOld=false){
   if(!this.selected||(kind==='video'&&channelMode(this.selected.network)!=='video')){track?.stop();throw Error('Channel unavailable');}
-  const old=this.tracks[kind];if(old!==track)old?.stop();this.tracks[kind]=track;
+  const old=this.tracks[kind];if(!keepOld&&old!==track)old?.stop();this.tracks[kind]=track;
   await Promise.all([...this.peers.values()].map(p=>this.applyTracks(p)));
   this.broadcastMedia();this.options.changed();
  }
