@@ -31,3 +31,19 @@
 @keyframes talk-ring{50%{inset:3px;opacity:.15}}
 @media(max-height:700px){#channel-hold{width:112px;height:112px;min-height:112px;padding:12px 8px;gap:5px}#channel-hold .hold-art,#channel-hold .hold-art svg{width:36px;height:36px}#channel-hold>span:last-child{max-width:94px;font-size:10px}}
 @media(prefers-reduced-motion:reduce){#channel-hold{transition:none}#channel-hold[aria-pressed=true]{transform:none}#channel-hold[aria-pressed=true]::before{animation:none}}
+
+/* Shared video layout controls: browser, Android and iOS use the same geometry. */
+.channel-person{position:relative;overflow:hidden;cursor:pointer}
+.channel-person video{position:absolute;inset:10px 14px 44px;width:calc(100% - 28px);height:calc(100% - 54px);object-fit:cover;border-radius:10px;background:#18242b}
+.channel-avatar{position:absolute;inset:10px 14px 44px;display:grid;place-items:center;border-radius:10px;background:linear-gradient(145deg,#35513f,#1d3025);color:#fff}
+.channel-avatar span{max-width:82%;padding:0 8px;font-size:clamp(11px,3vw,17px);font-weight:700;text-align:center;overflow-wrap:anywhere}
+#channel-people[data-layout=auto]{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));grid-auto-rows:minmax(130px,1fr);gap:12px}
+#channel-people[data-layout=grid]{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));grid-auto-rows:130px;gap:12px}
+#channel-people[data-layout=spotlight]{display:grid;grid-template-columns:1fr;grid-auto-rows:minmax(84px,104px);gap:12px}
+#channel-people[data-layout=stack]{display:flex;flex-direction:column;gap:12px}
+#channel-people[data-layout=stack] .channel-person{flex:none;height:150px;min-width:0;max-width:none}
+#channel-people[data-layout=spotlight] .channel-person:first-child:not([data-focus=false]){grid-row:span 4}
+#channel-people[data-layout=spotlight] .channel-person[data-focus=true]{grid-row:span 4}
+#channel-people[data-layout=auto] .channel-person[data-focus=true]{grid-column:span 2;grid-row:span 2}
+.channel-person[data-focus=true]{box-shadow:var(--inset),0 0 0 2px color-mix(in srgb,var(--green) 65%,transparent)}
+.channel-person video,.channel-avatar{min-height:0}
