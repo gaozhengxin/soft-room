@@ -1,14 +1,17 @@
+import type {Contact} from '../dm.ts';
 import {freshSession,type Session} from '../session.ts';
 import {normalizeNickname} from '../protocol.ts';
 import type {AtpSessionData} from '@atproto/api';
 import {resumeAccount,signInAccount,type AccountLogin,type SignedInAccount} from './atproto-account.ts';
 import {IndexedDbMasterKeys,IndexedDbRecordStore,openPrivateDatabase} from './indexed-db.ts';
-import {IDENTITY_COLLECTION,IDENTITY_RKEY,PortableStateRepository,ROOM_COLLECTION,type RecordStore,type StoredRecord} from './portable-state.ts';
-import {createRecoveryBundle,parseRecoveryFile,recoveryFile,recoverMasterKey} from './recovery.ts';
+import {CONVERSATION_COLLECTION,CONTACT_COLLECTION,IDENTITY_COLLECTION,IDENTITY_RKEY,PortableStateRepository,ROOM_COLLECTION,type RecordStore,type StoredRecord} from './portable-state.ts';
+import {renewRecoveryBundle,createRecoveryBundle,parseRecoveryFile,recoveryFile,recoverMasterKey} from './recovery.ts';
 
 export type PersistentProfile={id:string;label:string;pds:string};
 export type PersistentLoginResult={session:Session;recoveryFile?:string;temporary?:boolean};
 export type PersistentAccountLogin=AccountLogin&{recoveryFile?:string};
+type AccountSessionWriter=(value:AtpSessionData|undefined)=>Promise<void>;
+const pendingAccountWriters=new WeakMap<SignedInAccount,(writer:AccountSessionWriter)=>void>();
 const PROFILES='soft-room/persistent-identities/v1',ACTIVE='soft-room/persistent-active/v1',RECOVERY_PENDING='soft-room/persistent-recovery-pending/v1';
 let current:{profile:PersistentProfile;repository:PortableStateRepository;account?:SignedInAccount}|undefined;
 const profileId=(did:string)=>did;
@@ -23,6 +26,7 @@ function defaultUsername(handle:string){try{return normalizeNickname(handle.trim
 async function accountSession(repository:PortableStateRepository,session:Session,handle:string){if(session.name)return session;session.name=defaultUsername(handle);if(session.name)await repository.saveIdentity(session.identity,session.name);return session;}
 async function localRepository(profile:PersistentProfile){const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),local=new IndexedDbRecordStore(db,profile.id),key=await keys.get(profile.id);return {keys,local,key};}
 function sessionWriter(keys:IndexedDbMasterKeys,id:string,key:CryptoKey){let flight=Promise.resolve();return (value:AtpSessionData|undefined)=>{flight=flight.then(()=>value?keys.putAccountSession(id,key,value):keys.deleteAccountSession(id)).catch(()=>{});return flight;};}
+export async function authenticatePersistentAccount(input:AccountLogin){let writer:AccountSessionWriter|undefined;const account=await signInAccount(input,value=>void writer?.(value));pendingAccountWriters.set(account,next=>{writer=next;});return account;}
 
 class StagingStore implements RecordStore {
  records=new Map<string,StoredRecord>();
@@ -32,10 +36,10 @@ class StagingStore implements RecordStore {
  async put(record:StoredRecord){this.records.set(this.id(record.collection,record.rkey),structuredClone(record));}
  async delete(collection:string,rkey:string){this.records.delete(this.id(collection,rkey));}
 }
-async function stageSession(key:CryptoKey,session:Session){const store=new StagingStore(),repository=new PortableStateRepository(key,store);await repository.saveIdentity(session.identity,session.name);for(const room of session.rooms)await repository.saveRoom(room);return [...store.records.values()];}
+async function stageSession(key:CryptoKey,session:Session){const store=new StagingStore(),repository=new PortableStateRepository(key,store);await repository.saveIdentity(session.identity,session.name);await repository.saveContacts(session.contacts||[]);await repository.saveConversations(session.states||[]);for(const room of session.rooms)await repository.saveRoom(room);return [...store.records.values()];}
 async function replaceRemote(account:SignedInAccount,records:StoredRecord[]){
- const oldRooms=await account.records.list(ROOM_COLLECTION),identity=records.find(record=>record.collection===IDENTITY_COLLECTION&&record.rkey===IDENTITY_RKEY),rooms=records.filter(record=>record.collection===ROOM_COLLECTION);if(!identity)throw Error('Persistent identity unavailable');
- await account.records.put(identity);for(const room of rooms)await account.records.put(room);const keep=new Set(rooms.map(room=>room.rkey));for(const old of oldRooms)if(!keep.has(old.rkey))await account.records.delete(ROOM_COLLECTION,old.rkey);
+ const oldStates=await account.records.list(CONVERSATION_COLLECTION),states=records.filter(r=>r.collection===CONVERSATION_COLLECTION);for(const state of states)await account.records.put(state);for(const old of oldStates)if(!states.some(s=>s.rkey===old.rkey))await account.records.delete(CONVERSATION_COLLECTION,old.rkey);const oldContacts=await account.records.list(CONTACT_COLLECTION);const oldRooms=await account.records.list(ROOM_COLLECTION),identity=records.find(record=>record.collection===IDENTITY_COLLECTION&&record.rkey===IDENTITY_RKEY),rooms=records.filter(record=>record.collection===ROOM_COLLECTION);if(!identity)throw Error('Persistent identity unavailable');
+ const keepContacts=new Set(records.filter(r=>r.collection===CONTACT_COLLECTION).map(r=>r.rkey));for(const old of oldContacts)if(!keepContacts.has(old.rkey))await account.records.delete(CONTACT_COLLECTION,old.rkey);await account.records.put(identity);for(const contact of records.filter(record=>record.collection===CONTACT_COLLECTION))await account.records.put(contact);for(const room of rooms)await account.records.put(room);const keep=new Set(rooms.map(room=>room.rkey));for(const old of oldRooms)if(!keep.has(old.rkey))await account.records.delete(ROOM_COLLECTION,old.rkey);
 }
 async function installRecovery(account:SignedInAccount,session:Session,keys:IndexedDbMasterKeys,local:IndexedDbRecordStore,id:string){
  const bundle=await createRecoveryBundle(account.did),records=await stageSession(bundle.key,session);await replaceRemote(account,records);await local.replace(records);await keys.put(id,bundle.key);await keys.putRecovery(id,bundle.code,bundle.record);await account.recovery.put(bundle.record);return {repository:new PortableStateRepository(bundle.key,local,account.records),code:bundle.code};
@@ -48,15 +52,15 @@ export async function continuePersistent(profile:PersistentProfile,language:'zh'
  const restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');activate(resolvedProfile,repository,resumedAccount);return restored;
 }
 
-export async function loginPersistent(input:PersistentAccountLogin,language:'zh'|'en',create:boolean,initial?:Session):Promise<PersistentLoginResult>{
- let writeAccount:((value:AtpSessionData|undefined)=>Promise<void>)|undefined;const account=await signInAccount(input,value=>void writeAccount?.(value)),id=profileId(account.did),profile={id,label:account.handle,pds:account.pds};
+export async function loginPersistent(input:PersistentAccountLogin,language:'zh'|'en',create:boolean,initial?:Session,authenticatedAccount?:SignedInAccount,requireRecovery=false):Promise<PersistentLoginResult>{
+ let writeAccount:((value:AtpSessionData|undefined)=>Promise<void>)|undefined;const account=authenticatedAccount||await signInAccount(input,value=>void writeAccount?.(value)),id=profileId(account.did),profile={id,label:account.handle,pds:account.pds};
  const {keys,local,key:storedKey}=await localRepository(profile),remoteIdentity=await account.records.get(IDENTITY_COLLECTION,IDENTITY_RKEY);let remoteRecovery=await account.recovery.get();
- const activateAccount=async(key:CryptoKey,repository:PortableStateRepository)=>{writeAccount=sessionWriter(keys,id,key);if(account.session.session)await writeAccount(account.session.session);activate(profile,repository,account);};
+ const activateAccount=async(key:CryptoKey,repository:PortableStateRepository)=>{writeAccount=sessionWriter(keys,id,key);pendingAccountWriters.get(account)?.(writeAccount);if(account.session.session)await writeAccount(account.session.session);activate(profile,repository,account);};
  if(create&&remoteIdentity)throw Error('Persistent identity already exists');
 
  if(!storedKey){
   if(remoteIdentity){
-   if(!input.recoveryFile?.trim())return temporaryLogin(initial||freshSession(language),account.handle);
+   if(!input.recoveryFile?.trim()){if(requireRecovery)throw Error('Recovery file required');return temporaryLogin(initial||freshSession(language),account.handle);}
    if(!remoteRecovery)throw Error('Recovery not enabled');
    const recovered=parseRecoveryFile(input.recoveryFile,account.did),key=await recoverMasterKey(account.did,recovered.recoveryCode,remoteRecovery),repository=new PortableStateRepository(key,local,account.records);await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');await keys.put(id,key);await keys.putRecovery(id,recovered.recoveryCode,remoteRecovery);restored=await accountSession(repository,restored,account.handle);await activateAccount(key,repository);return {session:restored};
   }
@@ -78,10 +82,18 @@ export async function loginPersistent(input:PersistentAccountLogin,language:'zh'
 
  await repository.pull();let restored=await repository.restore(language);if(!restored)throw Error('Persistent identity unavailable');restored=await accountSession(repository,restored,account.handle);await activateAccount(storedKey,repository);return {session:restored};
 }
-export async function persistSessionState(session:Session){if(!current)return;await current.repository.saveIdentity(session.identity,session.name);for(const saved of session.rooms)await current.repository.saveRoom(saved);}
-export async function refreshPersistentState(language:'zh'|'en'){if(!current)return;await current.repository.pull();return current.repository.restore(language);}
+export async function persistSessionState(session:Session){if(!current)return;await current.repository.saveIdentity(session.identity,session.name);await current.repository.saveContacts(session.contacts||[]);await current.repository.saveConversations(session.states||[]);for(const saved of session.rooms)await current.repository.saveRoom(saved);}
+export async function refreshPersistentState(language:'zh'|'en'){if(!current)return;await current.repository.pull();const restored=await current.repository.restore(language);return restored?{...restored,deletedContacts:await current.repository.deletedContacts()}:undefined;}
+export async function saveSavedContact(contact:Contact){await current?.repository.saveContact(contact);}
+export async function deleteSavedContact(publicKey:string){await current?.repository.deleteContact(publicKey);}
 export async function deleteSavedRoom(id:string){await current?.repository.deleteRoom(id);}
-export async function exportRecoveryFile(){if(!current)return;const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),code=await keys.getRecoveryCode(current.profile.id);return code?recoveryFile(current.profile.id,code):undefined;}
+export async function exportRecoveryFile(){if(!current)return;const db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db),code=await keys.getRecoveryCode(current.profile.id);if(!code)return;const record=await current.account?.recovery.get()||await keys.getRecoveryRecord(current.profile.id);if(!record)return;await recoverMasterKey(current.profile.id,code,record);return recoveryFile(current.profile.id,code);}
 export async function logoutPersistent(){const id=current?.profile.id||activeProfileId(),account=current?.account;chooseTemporary();if(id){try{await account?.session.logout();}catch{}try{const db=await openPrivateDatabase();await new IndexedDbMasterKeys(db).deleteAccountSession(id);db.close();}catch{}}}
 export async function clearDeviceData(){const id=current?.profile.id||activeProfileId(),account=current?.account;chooseTemporary();if(!id)return;try{await account?.session.logout();}catch{}try{saveProfiles(profiles().filter(profile=>profile.id!==id));}catch{}try{const db=await openPrivateDatabase();await new IndexedDbMasterKeys(db).deleteProfile(id);await new IndexedDbRecordStore(db,id).deleteAll();db.close();}catch{}}
 export function isPersistent(){return !!current;}
+
+let recoveryResetFlight:Promise<string>|undefined;
+export function resetRecoveryFile(){if(recoveryResetFlight)return recoveryResetFlight;recoveryResetFlight=(async()=>{
+ const context=current;if(!context?.account)throw Error('Account sign-in required');
+ const {profile,account}=context,db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db);
+ try{const code=await keys.getRecoveryCode(profile.id
