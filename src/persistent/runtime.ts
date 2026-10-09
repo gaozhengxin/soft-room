@@ -96,4 +96,10 @@ let recoveryResetFlight:Promise<string>|undefined;
 export function resetRecoveryFile(){if(recoveryResetFlight)return recoveryResetFlight;recoveryResetFlight=(async()=>{
  const context=current;if(!context?.account)throw Error('Account sign-in required');
  const {profile,account}=context,db=await openPrivateDatabase(),keys=new IndexedDbMasterKeys(db);
- try{const code=await keys.getRecoveryCode(profile.id
+ try{const code=await keys.getRecoveryCode(profile.id),record=await keys.getRecoveryRecord(profile.id);if(!code||!record)throw Error('Recovery file required');
+ const revision=await account.recovery.revision();if(!revision)throw Error('Recovery not enabled');
+ const next=await renewRecoveryBundle(profile.id,code,record);
+ await account.recovery.replace(next.record,revision);
+ try{await keys.putRecovery(profile.id,next.code,next.record);}catch{/* The published secret must still be downloadable if device storage fails. */}return recoveryFile(profile.id,next.code);
+ }finally{db.close();}
+})().finally(()=>{recoveryResetFlight=undefined;});return recoveryResetFlight;}

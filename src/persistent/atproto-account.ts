@@ -16,6 +16,8 @@ export class AtProtoRecordStore implements RecordStore {
 export class AtProtoRecoveryStore {
  constructor(private agent:Agent,private repo:string){}
  async get(){try{return (await this.agent.com.atproto.repo.getRecord({repo:this.repo,collection:RECOVERY_COLLECTION,rkey:RECOVERY_RKEY})).data.value as RecoveryRecord;}catch(error){if((error as {status?:number}).status===400)return;throw error;}}
+ async revision(){return (await this.agent.com.atproto.repo.getRecord({repo:this.repo,collection:RECOVERY_COLLECTION,rkey:RECOVERY_RKEY})).data.cid;}
+ async replace(record:RecoveryRecord,cid:string){await this.agent.com.atproto.repo.putRecord({repo:this.repo,collection:RECOVERY_COLLECTION,rkey:RECOVERY_RKEY,record,validate:false,swapRecord:cid});}
  async put(record:RecoveryRecord){await this.agent.com.atproto.repo.putRecord({repo:this.repo,collection:RECOVERY_COLLECTION,rkey:RECOVERY_RKEY,record,validate:false});}
 }
 export type SignedInAccount={did:string;handle:string;pds:string;session:CredentialSession;records:AtProtoRecordStore;recovery:AtProtoRecoveryStore};

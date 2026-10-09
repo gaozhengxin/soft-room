@@ -1,14 +1,19 @@
 import './compat.ts';
 import {nativeApp,readLocation} from './platform.ts';
 import {Capacitor} from '@capacitor/core';
+import {App} from '@capacitor/app';
+import {profileHashFromAppUrl,showPublicProfile,showProfileDialog} from './public-profile.ts';
 import './style.css';
 import './sssp.css';
+import './kabutack.css';
 import './access.css';
+import './appearance.css';
+import {initAppearance} from './appearance.ts';
 import {browserLanguage,terminal,localAddress,blockedCountry,parseTrace,accessCodeDigest,validAccessDigest} from './access.ts';
 import {REGION_BYPASS_STORAGE_KEY,regionBypassed} from './region-bypass.ts';
 const language=browserLanguage(navigator.languages?.length?navigator.languages:[navigator.language]);
 const info=terminal(navigator.userAgent,navigator.maxTouchPoints);
-document.documentElement.lang=language==='zh'?'zh-CN':'en';document.documentElement.dataset.theme='soft';
+document.documentElement.lang=language==='zh'?'zh-CN':'en';initAppearance();
 const native=nativeApp();
 document.documentElement.dataset.device=info.device;document.documentElement.dataset.runtime=native?'app':'web';document.documentElement.dataset.platform=native?Capacitor.getPlatform():info.platform;
 if(native&&Capacitor.getPlatform()==='android'){
@@ -56,6 +61,7 @@ function unsupported(){
  button(panel,text.copy,()=>{void(async()=>{try{await navigator.clipboard.writeText(location.href);status.textContent=text.copied;}catch{status.textContent=text.copyManual;const input=document.createElement('textarea');input.value=location.href;input.readOnly=true;input.setAttribute('aria-label',text.copy);panel.append(input);input.focus();input.select();}})();});panel.append(status);
 }
 async function start(){
+ if(location.hash.startsWith('#profile=')){showPublicProfile(app,location.hash,language,native,()=>{history.replaceState(null,'',location.pathname);void start();});return;}
  if(!native&&!info.supported){unsupported();return;}
  screen(text.checking,text.wait,true);
  if(native||!localAddress(location.hostname))try{
@@ -64,4 +70,9 @@ async function start(){
  }catch{const panel=screen(text.failed,text.failedDetail);button(panel,text.retry,()=>void start());return;}
  try{app.replaceChildren();const {identityStartup}=await import('./persistent/startup.ts');await identityStartup(app,language);await import('./main.ts');}catch{const panel=screen(text.loadFailed,text.failedDetail);button(panel,text.retry,()=>location.reload());}
 }
-void start();
+async function boot(){
+ if(native){await App.addListener('appUrlOpen',(event:{url:string})=>{const hash=profileHashFromAppUrl(event.url);if(hash)showProfileDialog(hash,language);});const launch=await App.getLaunchUrl();const hash=launch?.url&&profileHashFromAppUrl(launch.url);if(hash)history.replaceState(null,'',location.pathname+hash);}
+ window.addEventListener('hashchange',()=>{if(!location.hash.startsWith('#profile='))return;if(app.querySelector('.shell')){showProfileDialog(location.hash,language);history.replaceState(null,'',location.pathname);}else showPublicProfile(app,location.hash,language,native,()=>{history.replaceState(null,'',location.pathname);void start();});});
+ await start();
+}
+void boot();

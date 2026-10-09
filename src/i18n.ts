@@ -1,4 +1,7 @@
 export const zh = {
+ dmDelete:'删除联系人',dmContactSyncPending:'已保存在本机，云端同步暂未完成。',
+ reorderRoom:'调整顺序',
+dmRooms:"一对一 · DM",dmAdd:"添加联系人",dmProfile:"用户资料",dmProfileHint:"公钥标识此用户；昵称由用户自行设置。",dmSave:"保存联系人",dmSaved:"已保存联系人",dmMessage:"发消息",dmAddress:"Inbox 地址或用户公钥",dmMyInbox:"我的 Inbox",dmInvalid:"请输入其他用户的有效 Inbox 地址或公钥。",dmLimit:"最多保存 100 位联系人。",dmContact:"联系人",dmNew:"未保存的联系人",dmNoContacts:"点击房间中的用户，开始一对一聊天。",dmListening:"Inbox 正在接收",dmConnecting:"Inbox 连接中…",dmRetrying:"Inbox 正在重试…",dmEmpty:"消息会加密发送至对方 Inbox；回复会在这里显示。",sidebarResize:"拖动调整侧栏宽度",
  channelOn:'开启 · ON',channelOff:'关闭 · OFF',channelSwitchOff:'关闭频道',channelSwitchOn:'开启频道',channelClosed:'创建人已关闭频道，连接已停止。',channelNotJoined:'尚未加入此频道。',
  channelConnectionWaiting:'正在连接…',channelConnectionReady:'已连接',channelConnectionPartial:'已连接 {count}/{total} 人',channelConnectionFailed:'连接失败，正在重试…',channelAdvanced:'高级配置',channelCustomTurn:'使用自己的 TURN 服务',channelCustomTurnHint:'仅本设备使用，刷新后清除。',channelTurnUrls:'TURN 地址（每行一个）',channelTurnUser:'用户名',channelTurnPassword:'密码',channelTurnSave:'保存设置',channelTurnSaved:'已保存，正在重新连接',channelTurnInvalid:'TURN 配置无效。',channelRelayPreparing:'正在准备中继…',channelRelayError:'中继不可用，正在重试…',channelRelayMining:'中继验证中 · {seconds} 秒',channelBack:'返回房间',channelCreateBack:'返回频道',channelMode:'频道模式',channelVoice:'纯语音',channelVideo:'视频',channelWalkie:'对讲机',channelVoiceHint:'自由语音聊天',channelVideoHint:'视频和语音聊天',channelWalkieHint:'按住说话，松开静音',channelStart:'创建并进入',channelTitle:'频道',channelEmpty:'说点什么吧。',channelPlaceholder:'发送频道消息…',channelSend:'发送',channelMicOn:'开启麦克风',channelMicOff:'关闭麦克风',channelCameraOn:'开启摄像头',channelCameraOff:'关闭摄像头',channelHold:'按住说话',channelTalking:'正在说话 · 松开结束',channelMediaError:'无法使用麦克风或摄像头。',channelSendError:'连接尚未就绪。',channelSent:'已发送给 {count} 人',channelPlay:'播放声音',channelMediaOff:'麦克风和摄像头已关闭。',channelNoPeers:'等待其他人进入频道',channelCameraHidden:'摄像头已关闭',
 
@@ -22,7 +25,7 @@ export const zh = {
  preferences:'外观与语言',
  saveName:'保存用户名',
  globalNameHint:'未设置房间昵称时使用这个用户名。留空恢复默认用户名。',
- globalName:'用户名',
+ profileShare:'生成个人主页链接',profileLink:'个人主页链接',profileOpen:'打开个人主页',globalName:'用户名',
  myIdentity:'我的身份',
  recoveryFileDownload:'下载恢复文件',recoveryFileSafety:'恢复文件就是身份密钥。请单独保管，不要发给任何人。',recoveryFileSaved:'恢复文件已保存。',recoveryFileMissing:'没有恢复文件，请重新登录后生成。',recoveryFileFailed:'保存失败，请重试。',clearDevice:'清除此设备数据',clearDeviceHint:'删除本机身份、房间和登录信息。云端身份保留。',clearDeviceConfirm:'清除这台设备上的身份、房间和登录信息？云端身份不会删除。',
  releases:'下载 iOS 版',androidDownload:'下载 Android 版',downloadUpdate:'更新',updateChecking:'正在检查更新…',updateAvailable:'更新到 {version}',updateCurrent:'已是最新版本',updateRetry:'重新检查更新',
@@ -71,6 +74,9 @@ export const zh = {
  } as const;
 export type TextKey=keyof typeof zh;
 export const en:Record<TextKey,string> = {
+ dmDelete:'Delete contact',dmContactSyncPending:'Saved on this device. Cloud sync is still pending.',
+ reorderRoom:'Reorder',
+dmRooms:"Direct messages",dmAdd:"Add contact",dmProfile:"User profile",dmProfileHint:"The public key identifies this user. Names are self-chosen.",dmSave:"Save contact",dmSaved:"Contact saved",dmMessage:"Message",dmAddress:"Inbox address or public key",dmMyInbox:"My Inbox",dmInvalid:"Enter another user\u2019s valid Inbox address or public key.",dmLimit:"You can save up to 100 contacts.",dmContact:"Saved contact",dmNew:"Unsaved contact",dmNoContacts:"Select someone in a room to start a direct message.",dmListening:"Inbox listening",dmConnecting:"Connecting Inbox\u2026",dmRetrying:"Retrying Inbox\u2026",dmEmpty:"Messages are encrypted to their Inbox. Replies appear here.",sidebarResize:"Drag to resize sidebar",
  channelOn:'Open · ON',channelOff:'Closed · OFF',channelSwitchOff:'Turn channel off',channelSwitchOn:'Turn channel on',channelClosed:'The creator has closed this channel. Connections have stopped.',channelNotJoined:'You have not joined this channel.',
  channelConnectionWaiting:'Connecting…',channelConnectionReady:'Connected',channelConnectionPartial:'Connected to {count}/{total}',channelConnectionFailed:'Connection failed. Retrying…',channelAdvanced:'Advanced settings',channelCustomTurn:'Use your own TURN service',channelCustomTurnHint:'Used on this device and cleared on refresh.',channelTurnUrls:'TURN URLs (one per line)',channelTurnUser:'Username',channelTurnPassword:'Password',channelTurnSave:'Save settings',channelTurnSaved:'Saved. Reconnecting…',channelTurnInvalid:'Invalid TURN settings.',channelRelayPreparing:'Preparing relay…',channelRelayError:'Relay unavailable. Retrying…',channelRelayMining:'Relay check · {seconds}s',channelBack:'Back to room',channelCreateBack:'Back to channels',channelMode:'Channel mode',channelVoice:'Voice',channelVideo:'Video',channelWalkie:'Walkie-talkie',channelVoiceHint:'Talk freely together',channelVideoHint:'Video and voice chat',channelWalkieHint:'Hold to talk, release to mute',channelStart:'Create and enter',channelTitle:'Channel',channelEmpty:'Say something.',channelPlaceholder:'Message this channel…',channelSend:'Send',channelMicOn:'Enable microphone',channelMicOff:'Disable microphone',channelCameraOn:'Enable camera',channelCameraOff:'Disable camera',channelHold:'Hold to talk',channelTalking:'Talking · release to stop',channelMediaError:'Microphone or camera unavailable.',channelSendError:'Connection is not ready.',channelSent:'Sent to {count}',channelPlay:'Play audio',channelMediaOff:'Microphone and camera are off.',channelNoPeers:'Waiting for others to enter',channelCameraHidden:'Camera is off',
 
@@ -93,7 +99,7 @@ export const en:Record<TextKey,string> = {
  preferences:'Appearance and language',
  saveName:'Save username',
  globalNameHint:'Used in rooms without a room nickname. Leave blank to use your default username.',
- globalName:'Username',
+ profileShare:'Create profile link',profileLink:'Profile link',profileOpen:'Open profile',globalName:'Username',
  myIdentity:'My identity',
  recoveryFileDownload:'Download recovery file',recoveryFileSafety:'This file is your identity key. Store it separately and never share it.',recoveryFileSaved:'Recovery file saved.',recoveryFileMissing:'No recovery file. Sign in again to create one.',recoveryFileFailed:'Could not save it.',clearDevice:'Clear this device’s data',clearDeviceHint:'Delete the local identity, rooms and login. Cloud identity stays.',clearDeviceConfirm:'Clear this device’s identity, rooms and login? Your cloud identity will remain.',
  releases:'Download for iOS',androidDownload:'Download for Android',downloadUpdate:'Update',updateChecking:'Checking for updates…',updateAvailable:'Update to {version}',updateCurrent:'Up to date',updateRetry:'Check again',
