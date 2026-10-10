@@ -43,14 +43,14 @@ export function mountMeshPanel(o:Options){
  fullscreenButton.id='channel-fullscreen';fullscreenButton.type='button';fullscreenButton.innerHTML=maximizeIcon;stage.append(fullscreenButton);
  const stageMetrics=()=>{
   const rect=people.getBoundingClientRect(),width=Math.max(1,rect.width),height=Math.max(1,rect.height);
-  const columns=Math.max(1,Math.min(6,Math.round(Math.sqrt(Math.max(1,people.children.length)*Math.max(.55,Math.min(2.4,width/Math.max(1,height)))))));
+  const count=Math.max(1,people.children.length),portrait=height>width;
+  const columns=count<=1?1:count===2?(portrait?1:2):count<=4?2:count<=6?(portrait?2:3):count<=8?(portrait?2:4):count<=9?3:portrait?3:(count<=16?4:5);
   people.style.setProperty('--grid-columns',String(columns));
-  people.style.setProperty('--grid-rows',String(Math.ceil(people.children.length/columns)));
-  const small=Math.max(0,people.children.length-1),portrait=height>width;
-  const spotColumns=Math.min(4,portrait?small>4?2:1:small<=1?1:small<=4?small:small<=8?2:small<=12?3:4);
+  people.style.setProperty('--grid-rows',String(Math.ceil(count/columns)));
+  const small=Math.max(0,count-1);
+  const spotColumns=portrait?(small<=2?small:small<=4?2:small<=9?3:4):(small<=2?1:small<=6?2:3);
   people.style.setProperty('--spot-columns',String(Math.max(1,spotColumns)));
   people.style.setProperty('--spot-rows',String(Math.max(1,Math.ceil(small/spotColumns))));
-  people.dataset.spotColumns=String(spotColumns);
  };
  const stageObserver=new ResizeObserver(stageMetrics);
  stageObserver.observe(people);
@@ -145,6 +145,7 @@ export function mountMeshPanel(o:Options){
   }
   holder.dataset.count=String(entries.length);holder.dataset.layout=spotlight&&entries.length>1?'spotlight':'grid';holder.dataset.preparing=String(entries.length===1);if(!spotlight||entries.length<2)focusKey=undefined;
   if(focusKey&&!entries.some(entry=>entry.key===focusKey)){focusKey=undefined;spotlight=false;}
+  fullscreenButton.hidden=mode!=='video';
   stageMetrics();
  }
  function render(){
