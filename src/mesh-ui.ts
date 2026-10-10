@@ -37,7 +37,8 @@ export function mountMeshPanel(o:Options){
  let inertBefore=new Map<HTMLElement,boolean>();
  const media=new ChannelMedia(()=>o.getMesh(),()=>render());
  const mediaNodes=new Map<string,{root:HTMLElement;video:HTMLVideoElement;audio:HTMLAudioElement;avatar:HTMLElement;name:HTMLElement;state:HTMLElement}>();
- const stage=$('channel-stage'),people=$('channel-people');
+ const people=$('channel-people');
+ const stage=document.createElement('div');stage.id='channel-stage';people.replaceWith(stage);stage.append(people);
  const fullscreenButton=document.createElement('button');
  fullscreenButton.id='channel-fullscreen';fullscreenButton.type='button';fullscreenButton.innerHTML=maximizeIcon;stage.append(fullscreenButton);
  const stageMetrics=()=>{
