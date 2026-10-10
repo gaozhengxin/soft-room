@@ -1,10 +1,10 @@
 import {channelMode} from './mesh-wire.ts';
 import type {RoomMesh} from './mesh.ts';
-import {BackgroundBlur} from './video-effects.ts';
+import {BackgroundBlur,warmBackgroundBlur} from './video-effects.ts';
 // Capture is user initiated. Generation checks stop late permission results after leaving a page.
 export class ChannelMedia {
  private generation=0;private pressed=false;private pending=new Set<string>();
- private videoStream:MediaStream|undefined;private blur:BackgroundBlur|undefined;private screenStream:MediaStream|undefined;
+ private videoStream:MediaStream|undefined;private blur:BackgroundBlur|undefined;private screenStream:MediaStream|undefined;private blurDegraded=false;
  private getMesh:()=>RoomMesh|undefined;private changed:()=>void;
  constructor(getMesh:()=>RoomMesh|undefined,changed:()=>void){this.getMesh=getMesh;this.changed=changed;}
  async toggle(kind:'audio'|'video'){
@@ -31,16 +31,20 @@ export class ChannelMedia {
  }
  async startVideo(){
   const mesh=this.getMesh();if(!mesh?.membership||channelMode(mesh.membership.network)!=='video')return;
+  void warmBackgroundBlur();
   await Promise.allSettled([this.acquire('audio',false),this.acquire('video',false)]);
  }
  get blurEnabled(){return !!this.blur;}
+ get blurDegradedMode(){return this.blurDegraded;}
  get screenSharing(){return !!this.screenStream;}
  async toggleBlur(){
   const mesh=this.getMesh();if(!mesh?.membership||this.pending.has('video'))return;this.pending.add('video');
   try{
    const source=this.videoStream?.getVideoTracks()[0];if(!source)throw Error('Camera unavailable');
-   if(this.blur){this.blur.stop();this.blur=undefined;await mesh.setTrack('video',source,true);return;}
-   const blur=new BackgroundBlur(source);await blur.start();this.blur=blur;await mesh.setTrack('video',blur.track,true);
+   if(this.blur){this.blur.stop();this.blur=undefined;this.blurDegraded=false;await mesh.setTrack('video',source,true);return;}
+   const blur=new BackgroundBlur(source);this.blur=blur;this.blurDegraded=false;
+   await mesh.setTrack('video',blur.start(),true);
+   void blur.warm().then(ok=>{if(!ok&&this.blur===blur){this.blurDegraded=true;this.changed();}});
   }finally{this.pending.delete('video');}
  }
  async toggleScreen(){
@@ -65,5 +69,5 @@ export class ChannelMedia {
   if(track){track.enabled=true;mesh.broadcastMedia();this.changed();}else await this.acquire('audio',true);
  }
  release(){this.pressed=false;const mesh=this.getMesh();if(mesh?.membership&&channelMode(mesh.membership.network)==='walkie'&&mesh.localTracks.audio){mesh.localTracks.audio.enabled=false;mesh.broadcastMedia();this.changed();}}
- stop(){this.generation++;this.release();this.screenStream?.getTracks().forEach(track=>track.stop());this.screenStream=undefined;this.blur?.stop();this.blur=undefined;this.videoStream?.getTracks().forEach(track=>track.stop());this.videoStream=undefined;}
+ stop(){this.generation++;this.release();this.screenStream?.getTracks().forEach(track=>track.stop());this.screenStream=undefined;this.blur?.stop();this.blur=undefined;this.blurDegraded=false;this.videoStream?.getTracks().forEach(track=>track.stop());this.videoStream=undefined;}
 }

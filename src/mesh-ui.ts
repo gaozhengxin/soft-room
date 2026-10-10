@@ -4,10 +4,12 @@ import {channelEnabled,channelMode,type ChannelMode,type Network} from './mesh-w
 import {ChannelMedia} from './channel-media.ts';
 import type {RoomMesh} from './mesh.ts';
 import type {TextKey} from './i18n.ts';
+import {createChannelControls} from './channel-controls.ts';
 import micIcon from './icons/mic.svg?raw';
 import videoIcon from './icons/video.svg?raw';
 import screenIcon from './icons/monitor-up.svg?raw';
 import blurIcon from './icons/sparkles.svg?raw';
+import chatIcon from './icons/message-square.svg?raw';
 import maximizeIcon from './icons/maximize.svg?raw';
 import minimizeIcon from './icons/minimize.svg?raw';
 import radioIcon from './icons/radio.svg?raw';
@@ -26,11 +28,11 @@ export function mountMeshPanel(o:Options){
  const page=document.createElement('section');page.id='channel-page';page.className='channel-page';page.hidden=true;
  page.innerHTML=`<header class="channel-head"><button id="channel-back" class="icon-button">${backIcon}</button><div><small id="channel-mode-label"></small><h2 id="channel-title"></h2></div></header>
  <section id="channel-create-view"><form id="channel-create"><label for="channel-name" data-i18n="meshName"></label><input id="channel-name" maxlength="32" autocomplete="off" required/><fieldset><legend data-i18n="channelMode"></legend>${modes.map((mode,i)=>`<label class="channel-mode"><input type="radio" name="mode" value="${mode}" ${i===0?'checked':''}/><span>${modeIcon(mode)}<strong data-i18n="${modeKey(mode)}"></strong><small data-i18n="${mode==='voice'?'channelVoiceHint':mode==='video'?'channelVideoHint':'channelWalkieHint'}"></small></span></label>`).join('')}</fieldset><p data-i18n="channelMediaOff"></p><button class="primary" data-i18n="channelStart"></button></form></section>
- <section id="channel-session"><div class="channel-actions"><span id="channel-state"></span><button id="channel-power" type="button" hidden></button><button id="channel-leave" class="icon-button" type="button">${leaveIcon}</button></div><p id="channel-connection" role="status"></p><p id="channel-relay-work" role="status" hidden><span class="relay-spinner"></span><span id="channel-relay-label"></span></p><details id="channel-advanced"><summary data-i18n="channelAdvanced"></summary><form id="channel-turn-form"><label><input id="channel-custom-turn" type="checkbox"/><span data-i18n="channelCustomTurn"></span></label><p data-i18n="channelCustomTurnHint"></p><div id="channel-turn-fields" hidden><label for="channel-turn-urls" data-i18n="channelTurnUrls"></label><textarea id="channel-turn-urls" rows="2" placeholder="turns:relay.example:443?transport=tcp"></textarea><label for="channel-turn-user" data-i18n="channelTurnUser"></label><input id="channel-turn-user" autocomplete="off"/><label for="channel-turn-password" data-i18n="channelTurnPassword"></label><input id="channel-turn-password" type="password" autocomplete="off"/></div><button type="submit" class="primary" data-i18n="channelTurnSave"></button><p id="channel-turn-status" role="status"></p></form></details><div id="channel-people"></div><button id="channel-play" data-i18n="channelPlay" hidden></button><div id="channel-messages" role="log" aria-live="polite"></div><div class="channel-media-controls"><button id="channel-mic"></button><button id="channel-camera"></button><button id="channel-blur"></button><button id="channel-screen"></button><button id="channel-hold"></button></div><form id="channel-composer"><label class="sr-only" for="channel-text" data-i18n="channelPlaceholder"></label><textarea id="channel-text" maxlength="2000" rows="1" data-placeholder="channelPlaceholder"></textarea><button class="primary" data-i18n="channelSend"></button></form><p class="channel-exit-note" data-i18n="meshOne"></p></section><p id="channel-feedback" role="status"></p>`;
+ <section id="channel-session"><div class="channel-actions"><span id="channel-state"></span><button id="channel-power" type="button" hidden></button><button id="channel-leave" class="icon-button" type="button">${leaveIcon}</button></div><p id="channel-connection" role="status"></p><p id="channel-relay-work" role="status" hidden><span class="relay-spinner"></span><span id="channel-relay-label"></span></p><details id="channel-advanced"><summary data-i18n="channelAdvanced"></summary><form id="channel-turn-form"><label><input id="channel-custom-turn" type="checkbox"/><span data-i18n="channelCustomTurn"></span></label><p data-i18n="channelCustomTurnHint"></p><div id="channel-turn-fields" hidden><label for="channel-turn-urls" data-i18n="channelTurnUrls"></label><textarea id="channel-turn-urls" rows="2" placeholder="turns:relay.example:443?transport=tcp"></textarea><label for="channel-turn-user" data-i18n="channelTurnUser"></label><input id="channel-turn-user" autocomplete="off"/><label for="channel-turn-password" data-i18n="channelTurnPassword"></label><input id="channel-turn-password" type="password" autocomplete="off"/></div><button type="submit" class="primary" data-i18n="channelTurnSave"></button><p id="channel-turn-status" role="status"></p></form></details><div id="channel-body"><div id="channel-stage"><div id="channel-people"></div><button id="channel-fullscreen" type="button" hidden>${maximizeIcon}</button></div><aside id="channel-messages" hidden><div class="channel-chat-head"><strong data-i18n="channelChat"></strong><button id="channel-chat-close" class="icon-button" type="button" data-i18n-label="channelChatClose">×</button></div><div id="channel-message-list" role="log" aria-live="polite"></div><form id="channel-composer"><label class="sr-only" for="channel-text" data-i18n="channelPlaceholder"></label><textarea id="channel-text" maxlength="2000" rows="1"></textarea><button class="primary" data-i18n="channelSend"></button></form></aside></div><button id="channel-play" data-i18n="channelPlay" hidden></button><p class="channel-exit-note" data-i18n="meshOne"></p></section><p id="channel-feedback" role="status"></p>`;
  chat.append(page);
  const $=<T extends HTMLElement=HTMLElement>(id:string)=>page.querySelector<T>('#'+id)!;
  const list=dialog.querySelector<HTMLElement>('#mesh-networks')!,feedback=dialog.querySelector<HTMLElement>('#mesh-feedback')!;
- let view:'none'|'create'|'channel'='none',token='',listSnapshot='',textSnapshot='',error:TextKey|undefined;
+ let view:'none'|'create'|'channel'='none',token='',listSnapshot='',textSnapshot='',error:TextKey|undefined,chatOpen=false;
  let tileOrder:string[]=[],focusKey:string|undefined,dragKey:string|undefined,spotlight=false;
  let advancedChannel='';
  let focusedNetwork:Network|undefined;
@@ -38,9 +40,19 @@ export function mountMeshPanel(o:Options){
  const media=new ChannelMedia(()=>o.getMesh(),()=>render());
  const mediaNodes=new Map<string,{root:HTMLElement;video:HTMLVideoElement;audio:HTMLAudioElement;avatar:HTMLElement;name:HTMLElement;state:HTMLElement}>();
  const people=$('channel-people');
- const stage=document.createElement('div');stage.id='channel-stage';people.replaceWith(stage);stage.append(people);
- const fullscreenButton=document.createElement('button');
- fullscreenButton.id='channel-fullscreen';fullscreenButton.type='button';fullscreenButton.innerHTML=maximizeIcon;stage.append(fullscreenButton);
+ const stage=$('channel-stage');
+ const body=$('channel-body');
+ const messageList=$('channel-message-list');
+ const fullscreenButton=$<HTMLButtonElement>('channel-fullscreen');
+ const controls=createChannelControls([
+  {id:'channel-mic',icon:micIcon,label:o.t('channelMicOn')},
+  {id:'channel-camera',icon:videoIcon,label:o.t('channelCameraOn')},
+  {id:'channel-blur',icon:blurIcon,label:o.t('channelBlurOn')},
+  {id:'channel-screen',icon:screenIcon,label:o.t('channelScreenStart')},
+  {id:'channel-chat',icon:chatIcon,label:o.t('channelChat')},
+  {id:'channel-hold',icon:holdIcon,label:o.t('channelHold')},
+ ]);
+ stage.append(controls.root);
  const stageMetrics=()=>{
   const rect=people.getBoundingClientRect(),width=Math.max(1,rect.width),height=Math.max(1,rect.height);
   const count=Math.max(1,people.children.length),portrait=height>width;
@@ -54,7 +66,8 @@ export function mountMeshPanel(o:Options){
  };
  const stageObserver=new ResizeObserver(stageMetrics);
  stageObserver.observe(people);
- document.addEventListener('fullscreenchange',()=>{const active=document.fullscreenElement===stage;fullscreenButton.innerHTML=active?minimizeIcon:maximizeIcon;fullscreenButton.dataset.active=String(active);});
+ function setChatOpen(next:boolean){chatOpen=next;controls.setChatOpen(chatOpen);}
+ document.addEventListener('fullscreenchange',()=>{const active=document.fullscreenElement===stage;fullscreenButton.innerHTML=active?minimizeIcon:maximizeIcon;fullscreenButton.dataset.active=String(active);controls.setFullscreen(active);});
  function finish(showList=false,leave=false){
   view='none';
  if(leave){media.stop();o.getMesh()?.leave();
@@ -63,7 +76,7 @@ export function mountMeshPanel(o:Options){
   tileOrder=[];focusKey=undefined;dragKey=undefined;spotlight=false;
   }
   page.hidden=true;for(const [node,value] of inertBefore)node.inert=value;inertBefore.clear();
-  $('channel-messages').replaceChildren();$<HTMLTextAreaElement>('channel-text').value='';textSnapshot='';error=undefined;
+  messageList.replaceChildren();$<HTMLTextAreaElement>('channel-text').value='';textSnapshot='';error=undefined;setChatOpen(false);
   if(showList){listSnapshot='';render();dialog.showModal();}else o.button.focus();
  }
  function back(){const was=view;if(was==='none')return;finish(was==='create');if(history.state?.softRoomChannel===token)history.back();}
@@ -103,12 +116,16 @@ export function mountMeshPanel(o:Options){
   try{const mode=page.querySelector<HTMLInputElement>('input[name=mode]:checked')!.value as ChannelMode;view='channel';o.getMesh()!.create($<HTMLInputElement>('channel-name').value.trim()||o.t('meshDefault'),mode);focusedNetwork=o.getMesh()!.membership!.network;render();$('channel-back').focus();if(mode==='video')void startVideoMode();}catch{view='create';error='meshFailed';render();}
  };
  const capture=async(kind:'audio'|'video')=>{try{error=undefined;await media.toggle(kind);}catch{error='channelMediaError';}render();};
- $('channel-mic').onclick=()=>void capture('audio');$('channel-camera').onclick=()=>void capture('video');
+ controls.button('channel-mic').onclick=()=>void capture('audio');
+ controls.button('channel-camera').onclick=()=>void capture('video');
  const startVideoMode=async()=>{try{error=undefined;await media.startVideo();}catch{error='channelMediaError';}render();};
- $('channel-blur').onclick=()=>{void media.toggleBlur().catch(()=>{error='channelMediaError';render();});render();};
- $('channel-screen').onclick=()=>{void media.toggleScreen().catch(()=>{error='channelScreenError';render();});render();};
+ controls.button('channel-blur').onclick=()=>{void media.toggleBlur().catch(()=>{error='channelMediaError';render();});render();};
+ controls.button('channel-screen').onclick=()=>{void media.toggleScreen().catch(()=>{error='channelScreenError';render();});render();};
+ controls.button('channel-chat').onclick=()=>{setChatOpen(!chatOpen);render();};
+ $('channel-chat-close').onclick=()=>{setChatOpen(false);render();};
  fullscreenButton.onclick=()=>{if(document.fullscreenElement===stage)void document.exitFullscreen().catch(()=>{});else void stage.requestFullscreen?.({navigationUI:'hide'}).catch(()=>{});};
- const hold=$('channel-hold');hold.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();hold.setPointerCapture(e.pointerId);void media.hold().catch(()=>{error='channelMediaError';render();});};
+ const hold=controls.button('channel-hold');
+ hold.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();hold.setPointerCapture(e.pointerId);void media.hold().catch(()=>{error='channelMediaError';render();});};
  hold.onpointerup=()=>media.release();hold.onpointercancel=()=>media.release();hold.onlostpointercapture=()=>media.release();hold.oncontextmenu=e=>e.preventDefault();
  hold.onkeydown=e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();void media.hold().catch(()=>{error='channelMediaError';render();});}};hold.onkeyup=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();media.release();}};
  window.addEventListener('blur',()=>media.release());document.addEventListener('visibilitychange',()=>{if(document.hidden)media.release();});
@@ -116,12 +133,9 @@ export function mountMeshPanel(o:Options){
  $<HTMLFormElement>('channel-composer').onsubmit=e=>{e.preventDefault();const input=$<HTMLTextAreaElement>('channel-text');try{const count=o.getMesh()!.sendText(input.value,o.selfName());input.value='';error=undefined;render();$('channel-feedback').textContent=o.t('channelSent',{count});}catch{error='channelSendError';render();}};
  $('channel-text').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$<HTMLFormElement>('channel-composer').requestSubmit();}};
  const el=(tag:string,text:string)=>{const node=document.createElement(tag);node.textContent=text;return node;};
- function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=$<HTMLButtonElement>(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.dataset.text=o.t(key);}button.title=o.t(key);button.setAttribute('aria-label',o.t(key));button.setAttribute('aria-pressed',String(enabled));}
+ function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=controls.button(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.dataset.text=o.t(key);}button.title=o.t(key);button.setAttribute('aria-label',o.t(key));button.setAttribute('aria-pressed',String(enabled));}
  function renderPeople(mesh:RoomMesh,mode:ChannelMode){
   const peers=mesh.peerViews(),holder=people;holder.classList.toggle('video-stage',mode==='video');
-  const messages=$('channel-messages');
-  if(mode==='video'){if(messages.parentElement!==stage)stage.append(messages);}
-  else if(messages.parentElement===stage)$('channel-session').insertBefore(messages,page.querySelector('.channel-media-controls'));
   const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video}))];
   for(const entry of entries)if(!tileOrder.includes(entry.key))tileOrder.push(entry.key);
   tileOrder=tileOrder.filter(key=>entries.some(entry=>entry.key===key));
@@ -169,19 +183,24 @@ export function mountMeshPanel(o:Options){
   if(!mesh||!focusedNetwork)return;
   focusedNetwork=mesh.getNetwork(focusedNetwork.id)||focusedNetwork;
   const enabled=channelEnabled(focusedNetwork),joined=mesh.membership?.network.id===focusedNetwork.id;
-  $('channel-state').textContent=o.t(enabled?'channelOn':'channelOff');
+  $('channel-state').textContent=o.t(enabled?'channelOn':'channelOff')+(media.blurEnabled&&media.blurDegradedMode?' · '+o.t('channelBlurDegraded'):'');
   $('channel-leave').title=o.t('meshLeave');$('channel-leave').setAttribute('aria-label',o.t('meshLeave'));
   fullscreenButton.title=o.t(document.fullscreenElement===stage?'channelExitFullscreen':'channelFullscreen');fullscreenButton.setAttribute('aria-label',fullscreenButton.title);
   $('channel-power').hidden=!o.isSelf(focusedNetwork.creator);$('channel-power').textContent=o.t(enabled?'channelSwitchOff':'channelSwitchOn');$<HTMLButtonElement>('channel-power').disabled=!o.canJoin();$('channel-power').setAttribute('aria-pressed',String(enabled));
   $('channel-leave').hidden=!joined;
-  for(const id of ['channel-advanced','channel-people','channel-messages','channel-composer'])$(id).hidden=!joined;
-  page.querySelector<HTMLElement>('.channel-media-controls')!.hidden=!joined;
+  for(const id of ['channel-advanced','channel-play'])$(id).hidden=!joined;
+  $('channel-body').hidden=!joined;
+  controls.setHidden(!joined);
   if(!joined){$('channel-title').textContent=focusedNetwork.name;$('channel-mode-label').textContent=o.t(modeKey(channelMode(focusedNetwork)));$('channel-connection').textContent=o.t(enabled?'channelNotJoined':'channelClosed');$('channel-relay-work').hidden=true;if(mesh.membership)renderPeople(mesh,channelMode(mesh.membership.network));return;}
   if(!mesh.membership)return;
   if(advancedChannel!==mesh.membership.network.id){advancedChannel=mesh.membership.network.id;const custom=mesh.customTurn;$<HTMLInputElement>('channel-custom-turn').checked=!!custom;$('channel-turn-fields').hidden=!custom;$<HTMLTextAreaElement>('channel-turn-urls').value=custom?(Array.isArray(custom.urls)?custom.urls.join('\n'):custom.urls):'';$<HTMLInputElement>('channel-turn-user').value=custom?.username||'';$<HTMLInputElement>('channel-turn-password').value=typeof custom?.credential==='string'?custom.credential:'';$('channel-turn-status').textContent='';$<HTMLDetailsElement>('channel-advanced').open=false;}
   const work=mesh.relayWork;$('channel-relay-work').hidden=!work||!['requesting','mining','error'].includes(work.status);$('channel-relay-work').querySelector<HTMLElement>('.relay-spinner')!.hidden=work?.status==='error';$('channel-relay-label').textContent=o.t(work?.status==='error'?'channelRelayError':work?.status==='requesting'?'channelRelayPreparing':'channelRelayMining',{seconds:Math.floor((work?.elapsed||0)/1000)});
   const mode=channelMode(mesh.membership.network);$('channel-title').textContent=mesh.membership.network.name;$('channel-mode-label').textContent=o.t(modeKey(mode));page.dataset.mode=mode;
-  $('channel-mic').hidden=mode==='walkie';$('channel-camera').hidden=mode!=='video';$('channel-blur').hidden=mode!=='video'||media.screenSharing;$('channel-screen').hidden=mode!=='video';$('channel-hold').hidden=mode!=='walkie';
+  controls.button('channel-mic').hidden=mode==='walkie';controls.button('channel-camera').hidden=mode!=='video';controls.button('channel-blur').hidden=mode!=='video'||media.screenSharing;controls.button('channel-screen').hidden=mode!=='video';controls.button('channel-chat').hidden=false;controls.button('channel-hold').hidden=mode!=='walkie';
+  const chatVisible=mode==='video'?chatOpen:true;
+  body.dataset.chat=chatVisible?'open':'closed';
+  $('channel-messages').hidden=!chatVisible;
+  controls.setChatOpen(chatVisible);
   labelButton('channel-mic',micIcon,mesh.localTracks.audio?'channelMicOff':'channelMicOn',!!mesh.localTracks.audio);
   labelButton('channel-camera',videoIcon,mesh.localTracks.video?'channelCameraOff':'channelCameraOn',!!mesh.localTracks.video);
   labelButton('channel-blur',blurIcon,media.blurEnabled?'channelBlurOff':'channelBlurOn',media.blurEnabled);
@@ -191,7 +210,7 @@ export function mountMeshPanel(o:Options){
   $('channel-connection').textContent=o.t(!peers.length?'channelNoPeers':connected===peers.length?'channelConnectionReady':connected?'channelConnectionPartial':peers.some(p=>p.state==='failed')?'channelConnectionFailed':'channelConnectionWaiting',{count:connected,total:peers.length});
   $<HTMLButtonElement>('channel-composer').querySelector('button')!.disabled=connected===0;
   renderPeople(mesh,mode);
-  const textState=JSON.stringify([mesh.messages,o.t('channelEmpty')]);if(textState!==textSnapshot){textSnapshot=textState;const log=$('channel-messages');const nearBottom=log.scrollHeight-log.scrollTop-log.clientHeight<60;log.replaceChildren();if(!mesh.messages.length)log.append(el('p',o.t('channelEmpty')));for(const m of mesh.messages){const row=document.createElement('article');row.className='channel-message';row.append(el('small',m.name||o.name(m.sender)),el('p',m.body));log.append(row);}if(nearBottom)log.scrollTop=log.scrollHeight;}
+  const textState=JSON.stringify([mesh.messages]);if(textState!==textSnapshot){textSnapshot=textState;const nearBottom=messageList.scrollHeight-messageList.scrollTop-messageList.clientHeight<60;messageList.replaceChildren();for(const m of mesh.messages){const row=document.createElement('article');row.className='channel-message';row.append(el('small',m.name||o.name(m.sender)),el('p',m.body));messageList.append(row);}if(nearBottom)messageList.scrollTop=messageList.scrollHeight;}
  }
  return {render,reset};
 }
