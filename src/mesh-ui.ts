@@ -119,6 +119,9 @@ export function mountMeshPanel(o:Options){
  function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=$<HTMLButtonElement>(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.dataset.text=o.t(key);}button.title=o.t(key);button.setAttribute('aria-label',o.t(key));button.setAttribute('aria-pressed',String(enabled));}
  function renderPeople(mesh:RoomMesh,mode:ChannelMode){
   const peers=mesh.peerViews(),holder=people;holder.classList.toggle('video-stage',mode==='video');
+  const messages=$('channel-messages');
+  if(mode==='video'){if(messages.parentElement!==stage)stage.append(messages);}
+  else if(messages.parentElement===stage)$('channel-session').insertBefore(messages,page.querySelector('.channel-media-controls'));
   const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video}))];
   for(const entry of entries)if(!tileOrder.includes(entry.key))tileOrder.push(entry.key);
   tileOrder=tileOrder.filter(key=>entries.some(entry=>entry.key===key));

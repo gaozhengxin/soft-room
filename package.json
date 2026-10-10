@@ -37,6 +37,7 @@
     "@capacitor/clipboard": "^8.0.1",
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "8.5.1",
+    "@mediapipe/tasks-vision": "^1.1.0",
     "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
