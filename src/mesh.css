@@ -33,15 +33,19 @@
 @media(max-height:700px){#channel-hold{width:112px;height:112px;min-height:112px;padding:12px 8px;gap:5px}#channel-hold .hold-art,#channel-hold .hold-art svg{width:36px;height:36px}#channel-hold>span:last-child{max-width:94px;font-size:10px}}
 @media(prefers-reduced-motion:reduce){#channel-hold{transition:none}#channel-hold[aria-pressed=true]{transform:none}#channel-hold[aria-pressed=true]::before{animation:none}}
 
-__REPLACE__
 /* Video stage layouts: preparation, pair, adaptive grid, spotlight. */
-#channel-stage{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;padding:0}
 #channel-people.video-stage{position:absolute;inset:0;display:grid;gap:12px;width:100%;height:100%;padding:12px 20px;box-sizing:border-box;overflow:hidden}
 .channel-person video{position:absolute;inset:0;z-index:0;width:100%;height:100%;object-fit:contain;background:#000}
 .channel-person{touch-action:none;user-select:none;-webkit-user-select:none;transition:transform .16s,box-shadow .16s,opacity .16s}
 .channel-person[data-dragging=true]{opacity:.7;transform:scale(.98);z-index:3}
 .channel-avatar{position:absolute;inset:0;z-index:1;display:grid;place-items:center;background:linear-gradient(145deg,#35513f,#1d3025);color:#fff}
-.channel-avatar span{max-width:min(86%,36ch);max-height:80%;padding:0 16px;font-size:clamp(14px,3.2vmin,30px);font-weight:700;text-align:center;overflow-wrap:anywhere}
+.channel-avatar span{position:relative;z-index:1;max-width:min(86%,36ch);max-height:80%;padding:0 16px;font-size:clamp(14px,3.2vmin,30px);font-weight:700;text-align:center;overflow-wrap:anywhere;text-shadow:0 1px 8px #000c}
+.channel-avatar .channel-voice{position:absolute;inset:0;z-index:0;width:100%;height:100%;opacity:0;pointer-events:none;transition:opacity .12s ease}
+.channel-avatar[data-speaking=true] .channel-voice{opacity:.95;filter:drop-shadow(0 0 12px color-mix(in srgb,var(--green,#5eead4) 70%,transparent))}
+.channel-avatar::after{content:'';position:absolute;left:50%;top:50%;width:min(78%,520px);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--green,#5eead4) 42%,transparent),transparent 66%);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:0}
+.channel-avatar[data-speaking=true]::after{opacity:calc(.18 + .55*var(--voice-level,0));animation:voice-glow 1.2s ease-in-out infinite}
+@keyframes voice-glow{50%{opacity:calc(.5 + .4*var(--voice-level,0))}}
+@media(prefers-reduced-motion:reduce){.channel-avatar[data-speaking=true]::after{animation:none}}
 .video-stage{display:grid;gap:12px;grid-template-columns:repeat(var(--grid-columns,2),minmax(0,1fr));grid-template-rows:repeat(var(--grid-rows,1),minmax(0,1fr))}
 .video-stage[data-count="1"],.video-stage[data-count="1"][data-layout=spotlight]{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
 .video-stage[data-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
@@ -99,3 +103,16 @@ __REPLACE__
 @media(max-width:760px){
  #channel-body[data-chat=open] #channel-messages{position:absolute;left:0;right:0;top:0;bottom:0;height:auto;max-height:none;z-index:6;border-radius:18px;box-shadow:0 -8px 30px #0004}
 }
+
+/* Screen-share camera overlay controls (camera is composited into the shared screen track). */
+.channel-person[data-key=self][data-sharing=true] video{transform:none}
+.channel-overlay-controls{position:absolute;z-index:4;display:flex;gap:6px;align-items:center;padding:6px;border-radius:14px;background:color-mix(in srgb,#000 62%,transparent);backdrop-filter:blur(6px);box-shadow:0 4px 16px #0007;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.channel-overlay-controls .overlay-btn{width:34px;height:34px;min-width:34px;min-height:34px;padding:0;margin:0;border:0;border-radius:10px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,#fff 18%,transparent);color:#fff;box-shadow:none;cursor:pointer}
+.channel-overlay-controls .overlay-btn:hover{background:color-mix(in srgb,#fff 30%,transparent)}
+.channel-overlay-controls .overlay-btn:active{transform:scale(.94)}
+.channel-overlay-controls .overlay-btn svg{width:19px;height:19px;display:block;flex:none}
+.channel-overlay-controls .overlay-btn[hidden]{display:none}
+.channel-overlay-controls .overlay-move{cursor:grab}
+.channel-overlay-controls[data-dragging=true]{opacity:.9}
+.channel-overlay-controls[data-dragging=true] .overlay-move{cursor:grabbing}
+@media(max-width:760px){.channel-overlay-controls{gap:4px;padding:4px;border-radius:12px}.channel-overlay-controls .overlay-btn{width:30px;height:30px;min-width:30px;min-height:30px;border-radius:9px}.channel-overlay-controls .overlay-btn svg{width:17px;height:17px}}

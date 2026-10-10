@@ -1,15 +1,16 @@
 import {channelMode} from './mesh-wire.ts';
 import type {RoomMesh} from './mesh.ts';
 import {BackgroundBlur,warmBackgroundBlur} from './video-effects.ts';
+import {ScreenComposite,type OverlayLayout} from './screen-composite.ts';
 // Capture is user initiated. Generation checks stop late permission results after leaving a page.
 export class ChannelMedia {
  private generation=0;private pressed=false;private pending=new Set<string>();
- private videoStream:MediaStream|undefined;private blur:BackgroundBlur|undefined;private screenStream:MediaStream|undefined;private blurDegraded=false;
+ private videoStream:MediaStream|undefined;private blur:BackgroundBlur|undefined;private screenStream:MediaStream|undefined;private composite:ScreenComposite|undefined;private blurDegraded=false;
  private getMesh:()=>RoomMesh|undefined;private changed:()=>void;
  constructor(getMesh:()=>RoomMesh|undefined,changed:()=>void){this.getMesh=getMesh;this.changed=changed;}
  async toggle(kind:'audio'|'video'){
   const mesh=this.getMesh(),membership=mesh?.membership;if(!mesh||!membership||this.pending.has(kind))return;
-  if(kind==='video'&&this.screenStream){await this.toggleScreen();return;}
+  if(kind==='video'&&this.screenStream){await this.toggleCamera();return;}
   const old=mesh.localTracks[kind];if(old){
    await mesh.setTrack(kind);
    if(kind==='video'){this.blur?.stop();this.blur=undefined;this.videoStream?.getTracks().forEach(track=>track.stop());this.videoStream=undefined;}
@@ -37,6 +38,11 @@ export class ChannelMedia {
  get blurEnabled(){return !!this.blur;}
  get blurDegradedMode(){return this.blurDegraded;}
  get screenSharing(){return !!this.screenStream;}
+ get cameraActive(){return !!(this.blur||this.videoStream);}
+ get overlayAvailable(){return !!this.composite?.cameraActive;}
+ get overlayLayout():OverlayLayout|undefined{return this.composite?.overlayLayout;}
+ get overlayRect(){return this.composite?.overlayRect;}
+ setOverlay(next:Partial<OverlayLayout>){this.composite?.setOverlay(next);}
  async toggleBlur(){
   const mesh=this.getMesh();if(!mesh?.membership||this.pending.has('video'))return;this.pending.add('video');
   try{
@@ -47,16 +53,44 @@ export class ChannelMedia {
    void blur.warm().then(ok=>{if(!ok&&this.blur===blur){this.blurDegraded=true;this.changed();}});
   }finally{this.pending.delete('video');}
  }
+ private cameraTrack(){return this.blur?.track||this.videoStream?.getVideoTracks()[0];}
+ private async shareVideo(mesh:RoomMesh){
+  const source=this.screenStream?.getVideoTracks()[0];if(!source)return;
+  const camera=this.cameraTrack();
+  if(this.composite&&!camera){this.composite.stop();this.composite=undefined;}
+  if(camera&&!this.composite){const composite=new ScreenComposite(source,()=>this.changed());composite.start();this.composite=composite;}
+  if(this.composite)this.composite.setCamera(camera);
+  await mesh.setTrack('video',camera&&this.composite?this.composite.track:source,true);
+ }
+ private async toggleCamera(){
+  const mesh=this.getMesh(),membership=mesh?.membership,version=this.generation;if(!mesh||!membership||this.pending.has('video'))return;
+  this.pending.add('video');
+  try{
+   if(this.blur||this.videoStream){this.blur?.stop();this.blur=undefined;this.videoStream?.getTracks().forEach(track=>track.stop());this.videoStream=undefined;await this.shareVideo(mesh);this.changed();return;}
+   const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{width:{ideal:640},height:{ideal:360},frameRate:{ideal:15,max:24},facingMode:'user'}});
+   if(version!==this.generation||mesh!==this.getMesh()||mesh.membership?.instance!==membership.instance){stream.getTracks().forEach(t=>t.stop());return;}
+   const track=stream.getTracks()[0];if(!track)throw Error('Capture unavailable');
+   this.videoStream=stream;
+   track.onended=()=>{if(this.videoStream?.getVideoTracks()[0]===track){this.videoStream=undefined;void this.shareVideo(mesh).catch(()=>{});}this.changed();};
+   await this.shareVideo(mesh);this.changed();
+  }finally{this.pending.delete('video');}
+ }
  async toggleScreen(){
   const mesh=this.getMesh();if(!mesh?.membership||this.pending.has('video'))return;this.pending.add('video');
   try{
-   if(this.screenStream){const oldScreen=this.screenStream;this.screenStream=undefined;await this.restoreVideo(mesh);oldScreen.getTracks().forEach(track=>track.stop());return;}
+   if(this.screenStream){
+    const oldScreen=this.screenStream;this.screenStream=undefined;oldScreen.getTracks().forEach(track=>track.stop());
+    this.composite?.stop();this.composite=undefined;
+    await this.restoreVideo(mesh);
+    this.changed();return;
+   }
    if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable');
-   this.blur?.stop();this.blur=undefined;
-   const stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:15,max:30}},audio:false});this.screenStream=stream;
+   const stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:30,max:30}},audio:false});
+   if(!this.getMesh()?.membership){stream.getTracks().forEach(t=>t.stop());return;}
    const track=stream.getVideoTracks()[0];if(!track)throw Error('Screen capture unavailable');
-   track.onended=()=>{void this.toggleScreen().catch(()=>{});};
-   await mesh.setTrack('video',track,true);
+   this.screenStream=stream;track.onended=()=>{void this.toggleScreen().catch(()=>{});};
+   await this.shareVideo(mesh);
+   this.changed();
   }finally{this.pending.delete('video');}
  }
  private async restoreVideo(mesh:RoomMesh){
@@ -69,5 +103,5 @@ export class ChannelMedia {
   if(track){track.enabled=true;mesh.broadcastMedia();this.changed();}else await this.acquire('audio',true);
  }
  release(){this.pressed=false;const mesh=this.getMesh();if(mesh?.membership&&channelMode(mesh.membership.network)==='walkie'&&mesh.localTracks.audio){mesh.localTracks.audio.enabled=false;mesh.broadcastMedia();this.changed();}}
- stop(){this.generation++;this.release();this.screenStream?.getTracks().forEach(track=>track.stop());this.screenStream=undefined;this.blur?.stop();this.blur=undefined;this.blurDegraded=false;this.videoStream?.getTracks().forEach(track=>track.stop());this.videoStream=undefined;}
+ stop(){this.generation++;this.release();this.screenStream?.getTracks().forEach(track=>track.stop());this.screenStream=undefined;this.composite?.stop();this.composite=undefined;this.blur?.stop();this.blur=undefined;this.blurDegraded=false;this.videoStream?.getTracks().forEach(track=>track.stop());this.videoStream=undefined;}
 }

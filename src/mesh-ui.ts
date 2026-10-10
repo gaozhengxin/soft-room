@@ -5,16 +5,20 @@ import {ChannelMedia} from './channel-media.ts';
 import type {RoomMesh} from './mesh.ts';
 import type {TextKey} from './i18n.ts';
 import {createChannelControls} from './channel-controls.ts';
+import {VoiceMeter,resumeVoiceContext} from './voice-visual.ts';
 import micIcon from './icons/mic.svg?raw';
 import videoIcon from './icons/video.svg?raw';
 import screenIcon from './icons/monitor-up.svg?raw';
 import blurIcon from './icons/sparkles.svg?raw';
 import chatIcon from './icons/message-square.svg?raw';
+import eyeIcon from './icons/eye.svg?raw';
+import eyeOffIcon from './icons/eye-off.svg?raw';
 import maximizeIcon from './icons/maximize.svg?raw';
 import minimizeIcon from './icons/minimize.svg?raw';
 import radioIcon from './icons/radio.svg?raw';
 import backIcon from './icons/arrow-left.svg?raw';
 import leaveIcon from './icons/log-out.svg?raw';
+import moveIcon from './icons/move.svg?raw';
 type Options={host:Element;button:HTMLButtonElement;t:(key:TextKey,params?:Record<string,string|number>)=>string;getMesh:()=>RoomMesh|undefined;canJoin:()=>boolean;name:(key:string)=>string;selfName:()=>string;isSelf:(key:string)=>boolean};
 const holdIcon=`<span class="hold-art" aria-hidden="true"><span class="hold-sage">${micIcon}</span><svg class="hold-patrol" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"><path d="M32 5 39 23 57 30 39 37 32 57 25 37 7 30 25 23Z"/><path d="m14 49 36-36M19 52l33-33"/><circle cx="32" cy="30" r="7"/></svg><svg class="hold-beetle" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M32 30V10m0 8L21 9V4m11 14L43 9V4M24 28l-9-6m25 6 9-6"/><path d="M32 27c-12 0-20 9-20 20l10 12h20l10-12c0-11-8-20-20-20Z"/><path d="M32 29v28M15 43l13 5m21-5-13 5"/><path d="m27 35 5-4 5 4-5 5Z"/></svg></span>`;
 const modes:ChannelMode[]=['voice','video','walkie'];
@@ -38,7 +42,8 @@ export function mountMeshPanel(o:Options){
  let focusedNetwork:Network|undefined;
  let inertBefore=new Map<HTMLElement,boolean>();
  const media=new ChannelMedia(()=>o.getMesh(),()=>render());
- const mediaNodes=new Map<string,{root:HTMLElement;video:HTMLVideoElement;audio:HTMLAudioElement;avatar:HTMLElement;name:HTMLElement;state:HTMLElement}>();
+type MediaItem={root:HTMLElement;video:HTMLVideoElement;audio:HTMLAudioElement;avatar:HTMLElement;name:HTMLElement;state:HTMLElement;overlay:HTMLElement;overlayToggle:HTMLButtonElement;overlayMove:HTMLButtonElement;voice:VoiceMeter;voiceCanvas:HTMLCanvasElement;voiceDrawn?:boolean;voiceLevel?:number;voiceLive?:boolean;selfVoiceStream?:MediaStream};
+const mediaNodes=new Map<string,MediaItem>();
  const people=$('channel-people');
  const stage=$('channel-stage');
  const body=$('channel-body');
@@ -71,7 +76,7 @@ export function mountMeshPanel(o:Options){
  function finish(showList=false,leave=false){
   view='none';
  if(leave){media.stop();o.getMesh()?.leave();
-  for(const item of mediaNodes.values()){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;}mediaNodes.clear();$('channel-people').replaceChildren();
+  for(const item of mediaNodes.values()){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;item.voice.release();}mediaNodes.clear();$('channel-people').replaceChildren();
   advancedChannel='';$<HTMLInputElement>('channel-turn-password').value='';
   tileOrder=[];focusKey=undefined;dragKey=undefined;spotlight=false;
   }
@@ -129,7 +134,7 @@ export function mountMeshPanel(o:Options){
  hold.onpointerup=()=>media.release();hold.onpointercancel=()=>media.release();hold.onlostpointercapture=()=>media.release();hold.oncontextmenu=e=>e.preventDefault();
  hold.onkeydown=e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();void media.hold().catch(()=>{error='channelMediaError';render();});}};hold.onkeyup=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();media.release();}};
  window.addEventListener('blur',()=>media.release());document.addEventListener('visibilitychange',()=>{if(document.hidden)media.release();});
- const resumeAudio=()=>{for(const item of mediaNodes.values()){if(item.audio.srcObject)void item.audio.play().catch(()=>{});if(item.video.srcObject&&item.video.paused)void item.video.play().catch(()=>{});}};
+ const resumeAudio=()=>{resumeVoiceContext();for(const item of mediaNodes.values()){if(item.audio.srcObject)void item.audio.play().catch(()=>{});if(item.video.srcObject&&item.video.paused)void item.video.play().catch(()=>{});}};
  document.addEventListener('pointerdown',resumeAudio,{passive:true});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)resumeAudio();});
  $<HTMLFormElement>('channel-composer').onsubmit=e=>{e.preventDefault();const input=$<HTMLTextAreaElement>('channel-text');try{const count=o.getMesh()!.sendText(input.value,o.selfName());input.value='';error=undefined;render();$('channel-feedback').textContent=o.t('channelSent',{count});}catch{error='channelSendError';render();}};
@@ -138,11 +143,11 @@ export function mountMeshPanel(o:Options){
  function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=controls.button(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.dataset.text=o.t(key);}button.title=o.t(key);button.setAttribute('aria-label',o.t(key));button.setAttribute('aria-pressed',String(enabled));}
  function renderPeople(mesh:RoomMesh,mode:ChannelMode){
   const peers=mesh.peerViews(),holder=people;holder.classList.toggle('video-stage',mode==='video');
-  const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video}))];
+  const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video,live:!!mesh.localTracks.audio?.enabled},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video,live:!!p.audio}))];
   for(const entry of entries)if(!tileOrder.includes(entry.key))tileOrder.push(entry.key);
   tileOrder=tileOrder.filter(key=>entries.some(entry=>entry.key===key));
   entries.sort((a,b)=>tileOrder.indexOf(a.key)-tileOrder.indexOf(b.key));
-  for(const [key,item] of mediaNodes)if(!entries.some(e=>e.key===key)){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;item.root.remove();mediaNodes.delete(key);}
+  for(const [key,item] of mediaNodes)if(!entries.some(e=>e.key===key)){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;item.voice.release();item.root.remove();mediaNodes.delete(key);}
   const moveTile=(key:string,root:HTMLElement,event:PointerEvent)=>{
    if(dragKey!==key)return;
    const targetKey=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>('.channel-person')?.dataset.key;
@@ -150,24 +155,125 @@ export function mountMeshPanel(o:Options){
    const from=tileOrder.indexOf(key),to=tileOrder.indexOf(targetKey);if(from<0||to<0)return;
    tileOrder.splice(to,0,...tileOrder.splice(from,1));render();
   };
-  for(const entry of entries){let item=mediaNodes.get(entry.key);if(!item){const root=document.createElement('article');root.className='channel-person';root.dataset.key=entry.key;const video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;const audio=document.createElement('audio');audio.autoplay=true;audio.muted=entry.key==='self';video.setAttribute('playsinline','');const avatar=document.createElement('div');avatar.className='channel-avatar';avatar.append(el('span',entry.label));const name=el('strong',''),state=el('small','');root.append(avatar,video,audio,name,state);
+  for(const entry of entries){let item=mediaNodes.get(entry.key);if(!item){const root=document.createElement('article');root.className='channel-person';root.dataset.key=entry.key;const video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;const audio=document.createElement('audio');audio.autoplay=true;audio.muted=entry.key==='self';video.setAttribute('playsinline','');const avatar=document.createElement('div');avatar.className='channel-avatar';const voiceCanvas=document.createElement('canvas');voiceCanvas.className='channel-voice';voiceCanvas.setAttribute('aria-hidden','true');avatar.append(voiceCanvas,el('span',entry.label));const name=el('strong',''),state=el('small','');const overlay=document.createElement('div');overlay.className='channel-overlay-controls';const overlayToggle=document.createElement('button');overlayToggle.type='button';overlayToggle.className='overlay-btn overlay-toggle';const overlayMove=document.createElement('button');overlayMove.type='button';overlayMove.className='overlay-btn overlay-move';overlayMove.innerHTML=moveIcon;overlay.append(overlayToggle,overlayMove);root.append(avatar,video,overlay,audio,name,state);
+   overlay.addEventListener('dblclick',event=>event.stopPropagation());
+   overlay.addEventListener('pointerdown',event=>{
+    if(event.pointerType==='mouse'&&event.button!==0)return;
+    if((event.target as HTMLElement).closest('.overlay-toggle'))return;
+    event.preventDefault();event.stopPropagation();
+    const rect=media.overlayRect,layout=media.overlayLayout;if(!rect||!layout||!layout.visible)return;
+    const startX=event.clientX,startY=event.clientY,start={x:layout.x,y:layout.y};
+    const invX=1/Math.max(.05,1-rect.w),invY=1/Math.max(.05,1-rect.h);
+    overlay.dataset.dragging='true';
+    try{overlay.setPointerCapture(event.pointerId);}catch{}
+    overlay.onpointermove=moveEvent=>{
+     const target=mediaNodes.get(entry.key);if(!target)return;
+     const box=videoBox(target),width=box.width,height=box.height;
+     const x=Math.min(1,Math.max(0,start.x+(moveEvent.clientX-startX)/width*invX));
+     const y=Math.min(1,Math.max(0,start.y+(moveEvent.clientY-startY)/height*invY));
+     media.setOverlay({x,y});positionOverlayControls(target);
+    };
+    const stop=(upEvent:PointerEvent)=>{delete overlay.dataset.dragging;overlay.onpointermove=null;overlay.onpointerup=null;overlay.onpointercancel=null;try{overlay.releasePointerCapture(upEvent.pointerId);}catch{}};
+    overlay.onpointerup=stop;overlay.onpointercancel=stop;
+   });
+   overlayToggle.addEventListener('click',event=>{event.stopPropagation();const layout=media.overlayLayout;media.setOverlay({visible:!layout?.visible});render();});
+   overlayToggle.addEventListener('pointerdown',event=>event.stopPropagation());
    root.ondblclick=()=>{if(spotlight&&focusKey===entry.key){spotlight=false;focusKey=undefined;}else{spotlight=true;focusKey=entry.key;}render();};
    root.onpointerdown=event=>{if(event.pointerType==='mouse'&&event.button!==0)return;dragKey=entry.key;root.dataset.dragging='true';root.setPointerCapture(event.pointerId);};
    root.onpointermove=event=>moveTile(entry.key,root,event);
    const stopDrag=(event:PointerEvent)=>{if(dragKey!==entry.key)return;dragKey=undefined;delete root.dataset.dragging;try{root.releasePointerCapture(event.pointerId);}catch{}};
    root.onpointerup=stopDrag;root.onpointercancel=stopDrag;
-   holder.append(root);item={root,video,audio,avatar,name,state};mediaNodes.set(entry.key,item);}
-   item.root.dataset.state=entry.connectionState;item.root.dataset.focus=String(spotlight&&focusKey===entry.key);item.name.textContent=entry.label;item.state.textContent=entry.state;item.video.hidden=mode!=='video'||!entry.video;item.avatar.hidden=mode==='video'&&!!entry.video;
+   holder.append(root);item={root,video,audio,avatar,name,state,overlay,overlayToggle,overlayMove,voice:new VoiceMeter(),voiceCanvas};mediaNodes.set(entry.key,item);}
+   item.root.dataset.state=entry.connectionState;item.root.dataset.focus=String(spotlight&&focusKey===entry.key);item.root.dataset.sharing=String(entry.key==='self'&&media.screenSharing);item.name.textContent=entry.label;item.state.textContent=entry.state;item.video.hidden=mode!=='video'||!entry.video;item.avatar.hidden=mode==='video'&&!!entry.video;
    let stream=entry.stream;if(entry.key==='self'){const track=mesh.localTracks.video;const old=item.video.srcObject as MediaStream|null;stream=track?(old?.getVideoTracks()[0]===track?old:new MediaStream([track])):undefined;}
    if(item.video.srcObject!==(stream||null)){item.video.srcObject=stream||null;if(stream)void item.video.play().catch(()=>{});}
    const sound=entry.key==='self'?null:entry.stream||null;if(item.audio.srcObject!==sound){item.audio.srcObject=sound;if(sound)void item.audio.play().catch(()=>{});}
+   if(entry.key==='self'){const track=mesh.localTracks.audio;if(item.selfVoiceStream?.getAudioTracks()[0]!==track)item.selfVoiceStream=track?new MediaStream([track]):undefined;}
+   item.voice.setStream(item.avatar.hidden?undefined:entry.key==='self'?item.selfVoiceStream:(entry.stream&&entry.stream.getAudioTracks().length?entry.stream:undefined));
+   item.voiceLive=entry.live;
+   const overlayLayout=media.overlayLayout;
+   const showOverlay=mode==='video'&&entry.key==='self'&&media.screenSharing&&!!overlayLayout;
+   item.overlay.hidden=!showOverlay||!media.overlayRect;
+   if(showOverlay&&media.overlayRect){
+    const visible=overlayLayout!.visible;
+    item.overlay.dataset.visible=String(visible);
+    item.overlayToggle.innerHTML=visible?eyeIcon:eyeOffIcon;
+    const toggleLabel=o.t(visible?'channelCameraOverlayHide':'channelCameraOverlayShow');
+    item.overlayToggle.title=toggleLabel;item.overlayToggle.setAttribute('aria-label',toggleLabel);item.overlayToggle.setAttribute('aria-pressed',String(visible));
+    item.overlayMove.hidden=!visible;item.overlayMove.title=o.t('channelCameraOverlayMove');item.overlayMove.setAttribute('aria-label',o.t('channelCameraOverlayMove'));
+    positionOverlayControls(item);
+   }
   }
   holder.dataset.count=String(entries.length);holder.dataset.layout=spotlight&&entries.length>1?'spotlight':'grid';holder.dataset.preparing=String(entries.length===1);if(!spotlight||entries.length<2)focusKey=undefined;
   if(focusKey&&!entries.some(entry=>entry.key===focusKey)){focusKey=undefined;spotlight=false;}
   fullscreenButton.hidden=mode!=='video';
   stageMetrics();
  }
- function render(){
+function positionOverlayControls(item:MediaItem){
+  const rect=media.overlayRect,box=videoBox(item);
+  if(!rect||!box.width||!box.height){item.overlay.hidden=true;return;}
+  const width=box.width,height=box.height;
+  item.overlay.hidden=false;
+  const pipLeft=box.left+rect.x*width,pipTop=box.top+rect.y*height,pipW=rect.w*width,pipH=rect.h*height;
+  const controls=item.overlay.getBoundingClientRect(),bw=controls.width||104,bh=controls.height||40,margin=8;
+  let left=pipLeft+pipW-bw,top=pipTop-bh-margin;
+  if(top<margin)top=pipTop+margin;
+  const tileWidth=item.root.clientWidth,tileHeight=item.root.clientHeight;
+  left=Math.min(tileWidth-bw-margin,Math.max(margin,left));top=Math.min(tileHeight-bh-margin,Math.max(margin,top));
+  item.overlay.style.left=left+'px';item.overlay.style.top=top+'px';
+ }
+// Displayed video rectangle inside a tile (mirrors object-fit:contain).
+function videoBox(item:MediaItem){
+  const width=item.root.clientWidth,height=item.root.clientHeight;
+  const video=item.video.videoWidth,videoHeight=item.video.videoHeight;
+  if(!video||!videoHeight||!width||!height)return {left:0,top:0,width,height};
+  const scale=Math.min(width/video,height/videoHeight),boxWidth=video*scale,boxHeight=videoHeight*scale;
+  return {left:(width-boxWidth)/2,top:(height-boxHeight)/2,width:boxWidth,height:boxHeight};
+ }
+let voiceRunning=true;
+const voiceLoop=()=>{
+ if(!voiceRunning)return;
+ requestAnimationFrame(voiceLoop);
+ if(document.hidden||view!=='channel')return;
+ for(const item of mediaNodes.values())drawVoice(item);
+};
+function drawVoice(item:MediaItem){
+ const canvas=item.voiceCanvas,avatar=item.avatar;
+ const clear=()=>{canvas.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height);item.voiceDrawn=false;};
+ if(!item.voiceLive||avatar.hidden||!item.voice.ready){
+  if(item.voiceDrawn||avatar.dataset.speaking==='true'){avatar.dataset.speaking='false';avatar.style.setProperty('--voice-level','0');clear();}
+  return;
+ }
+ const data=item.voice.read();if(!data)return;
+ const rect=avatar.getBoundingClientRect(),dpr=Math.min(2,globalThis.devicePixelRatio||1);
+ const width=Math.max(1,Math.round(rect.width*dpr)),height=Math.max(1,Math.round(rect.height*dpr));
+ if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
+ const context=canvas.getContext('2d');if(!context)return;
+ let peak=0;for(let i=0;i<data.length;i++)if(data[i]>peak)peak=data[i];
+ const level=Math.min(1,peak/255);
+ const smooth=item.voiceLevel===undefined?level:Math.max(level,(item.voiceLevel||0)*.86);
+ item.voiceLevel=Math.round(smooth*1000)/1000;
+ avatar.style.setProperty('--voice-level',String(smooth));
+ if(smooth<=(item.voiceDrawn?0.09:0.14)){
+  if(item.voiceDrawn)clear();
+  avatar.dataset.speaking='false';
+  return;
+ }
+ avatar.dataset.speaking='true';
+ item.voiceDrawn=true;
+ const bars=Math.min(40,Math.max(12,Math.round(width/22)));
+ const gap=Math.max(1,Math.round(width*.012)),barW=Math.max(1,(width-gap*(bars-1))/bars);
+ const midY=height/2,barMax=Math.max(1,Math.round(height*.30));
+ context.clearRect(0,0,width,height);
+ context.fillStyle='rgba(255,255,255,.95)';context.shadowColor='rgba(255,255,255,.5)';context.shadowBlur=8;
+ for(let i=0;i<bars;i++){
+  const value=data[Math.floor(i*(data.length-1)/(bars-1))]/255;
+  const barHeight=Math.max(1.5,value*Math.max(.12,smooth)*barMax);
+  context.fillRect(Math.round(i*(barW+gap)),midY-barHeight/2,barW,barHeight);
+ }
+}
+requestAnimationFrame(voiceLoop);
+function render(){
   const mesh=o.getMesh(),groups=mesh?.networks()||[];
   o.button.dataset.count=String(groups.length);o.button.classList.toggle('mesh-active',!!mesh?.membership);
   dialog.querySelector<HTMLButtonElement>('#channel-new')!.disabled=!o.canJoin()||!mesh?.supported;
@@ -176,7 +282,7 @@ export function mountMeshPanel(o:Options){
   if(snapshot!==listSnapshot){listSnapshot=snapshot;list.replaceChildren();if(!groups.length)list.append(el('p',o.t('meshEmpty')));
    for(const group of groups){const card=document.createElement('button');card.type='button';card.className='channel-card';card.dataset.network=group.network.id;card.disabled=!o.canJoin()||!mesh?.supported||(!channelEnabled(group.network)&&!o.isSelf(group.network.creator));card.dataset.enabled=String(channelEnabled(group.network));card.innerHTML=modeIcon(channelMode(group.network));const detail=document.createElement('span');detail.append(el('strong',group.network.name),el('small',(mesh?.membership?.network.id===group.network.id?o.t('meshCurrent')+' · ':'')+o.t(channelEnabled(group.network)?'channelOn':'channelOff')+' · '+o.t(modeKey(channelMode(group.network)))+' · '+o.t('meshCount',{count:group.people.length})),el('small',o.t('meshCreator',{name:o.name(group.network.creator)})));card.append(detail);card.onclick=()=>enter(group.network);list.append(card);}
   }
-  if(!mesh?.membership&&mediaNodes.size){media.stop();for(const item of mediaNodes.values()){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;}mediaNodes.clear();$('channel-people').replaceChildren();}
+  if(!mesh?.membership&&mediaNodes.size){media.stop();for(const item of mediaNodes.values()){item.video.pause();item.video.srcObject=null;item.audio.pause();item.audio.srcObject=null;item.voice.release();}mediaNodes.clear();$('channel-people').replaceChildren();}
   if(view!=='channel'&&mesh?.membership)renderPeople(mesh,channelMode(mesh.membership.network));
   if(view==='none')return;
   $('channel-create-view').hidden=view!=='create';$('channel-session').hidden=view!=='channel';$('channel-feedback').textContent=error?o.t(error):'';
@@ -204,7 +310,8 @@ export function mountMeshPanel(o:Options){
   $('channel-messages').hidden=!chatVisible;
   controls.setChatOpen(chatVisible);
   labelButton('channel-mic',micIcon,mesh.localTracks.audio?'channelMicOff':'channelMicOn',!!mesh.localTracks.audio);
-  labelButton('channel-camera',videoIcon,mesh.localTracks.video?'channelCameraOff':'channelCameraOn',!!mesh.localTracks.video);
+  const cameraOn=!!mesh.localTracks.video;
+  labelButton('channel-camera',videoIcon,cameraOn?'channelCameraOff':'channelCameraOn',cameraOn);
   labelButton('channel-blur',blurIcon,media.blurEnabled?'channelBlurOff':'channelBlurOn',media.blurEnabled);
   labelButton('channel-screen',screenIcon,media.screenSharing?'channelScreenStop':'channelScreenStart',media.screenSharing);
   labelButton('channel-hold',holdIcon,mesh.localTracks.audio?.enabled?'channelTalking':'channelHold',!!mesh.localTracks.audio?.enabled);
