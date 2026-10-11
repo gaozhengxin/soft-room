@@ -33,7 +33,7 @@ export class ChannelMedia {
  async startVideo(){
   const mesh=this.getMesh();if(!mesh?.membership||channelMode(mesh.membership.network)!=='video')return;
   void warmBackgroundBlur();
-  await Promise.allSettled([this.acquire('audio',false),this.acquire('video',false)]);
+  // Entering a video channel does not start capture: mic and camera stay off until tapped.
  }
  get blurEnabled(){return !!this.blur;}
  get blurDegradedMode(){return this.blurDegraded;}

@@ -21,7 +21,7 @@ try{
  await a.locator('#channel-mic').click();await a.waitForFunction(()=>window.pcs.some(pc=>pc.getSenders().some(s=>s.track?.kind==='audio'&&s.track.readyState==='live')));
  const count=await a.evaluate(()=>window.pcs.length);await a.locator('#channel-back').click();await a.locator('#channel-page').waitFor({state:'hidden'});
  assert.ok(await a.evaluate(()=>window.pcs.some(pc=>pc.connectionState==='connected'&&pc.getSenders().some(s=>s.track?.readyState==='live'))));
- await b.locator('#channel-text').fill('While in room');await b.locator('#channel-composer button').click();await enter(a,'First');await a.locator('.channel-message').filter({hasText:'While in room'}).waitFor();assert.equal(await a.evaluate(()=>window.pcs.length),count);
+ await b.locator('#channel-chat').click();await b.locator('#channel-text').fill('While in room');await b.locator('#channel-composer button').click();await enter(a,'First');await a.locator('#channel-chat').click();await a.locator('.channel-message').filter({hasText:'While in room'}).waitFor();assert.equal(await a.evaluate(()=>window.pcs.length),count);
  console.log('RETURN_KEEPS_CONNECTION_MEDIA_AND_MESSAGES');
  await a.locator('#channel-power').click();await b.locator('#channel-state').filter({hasText:'OFF'}).waitFor();await b.waitForFunction(()=>window.pcs.every(pc=>pc.connectionState==='closed'));
  await b.locator('#channel-back').click();await b.locator('#room-network').click();const off=b.locator('.channel-card').filter({hasText:'First'});assert.ok(await off.isDisabled());assert.ok((await off.textContent()).includes('OFF'));await b.locator('#mesh-dialog .sheet-head button').click();

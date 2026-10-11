@@ -19,7 +19,7 @@ try{
  await b.locator('#room-network').click();await b.locator('.channel-card').filter({hasText:'Relay channel'}).click();
  await Promise.all(pages.map(p=>p.waitForFunction(()=>window.pcs.some(pc=>pc.connectionState==='connected'&&pc.sctp?.state==='connected'),null,{timeout:100000})));
  for(const p of pages){assert.ok(await p.evaluate(async()=>{for(const pc of window.pcs)if(pc.connectionState==='connected'){const stats=await pc.getStats();for(const s of stats.values())if(s.type==='transport'&&s.selectedCandidatePairId){const pair=stats.get(s.selectedCandidatePairId);if(stats.get(pair.localCandidateId)?.candidateType==='relay')return true;}}return false;}));}
- for(const [from,to,text] of [[a,b,'Wi-Fi to mobile relay test'],[b,a,'Mobile to Wi-Fi relay test']]){await from.locator('#channel-text').fill(text);await from.locator('#channel-composer button').click();await to.locator('.channel-message p').filter({hasText:text}).waitFor();}
+ for(const [from,to,text] of [[a,b,'Wi-Fi to mobile relay test'],[b,a,'Mobile to Wi-Fi relay test']]){await from.locator('#channel-chat').click();await from.locator('#channel-text').fill(text);await from.locator('#channel-composer button').click();await to.locator('.channel-message p').filter({hasText:text}).waitFor();}
  console.log('PASS: WebKit UI, real Waku signaling, independent PoW credentials, selected TURN relay pairs, bidirectional channel text');
  for(const p of pages)await p.locator('#channel-leave').click();
 }finally{await browser.close();}

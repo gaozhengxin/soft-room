@@ -7,6 +7,7 @@ import type {TextKey} from './i18n.ts';
 import {createChannelControls} from './channel-controls.ts';
 import {VoiceMeter,resumeVoiceContext} from './voice-visual.ts';
 import micIcon from './icons/mic.svg?raw';
+import micOffIcon from './icons/mic-off.svg?raw';
 import videoIcon from './icons/video.svg?raw';
 import screenIcon from './icons/monitor-up.svg?raw';
 import blurIcon from './icons/sparkles.svg?raw';
@@ -42,7 +43,7 @@ export function mountMeshPanel(o:Options){
  let focusedNetwork:Network|undefined;
  let inertBefore=new Map<HTMLElement,boolean>();
  const media=new ChannelMedia(()=>o.getMesh(),()=>render());
-type MediaItem={root:HTMLElement;video:HTMLVideoElement;audio:HTMLAudioElement;avatar:HTMLElement;name:HTMLElement;state:HTMLElement;overlay:HTMLElement;overlayToggle:HTMLButtonElement;overlayMove:HTMLButtonElement;voice:VoiceMeter;voiceCanvas:HTMLCanvasElement;voiceDrawn?:boolean;voiceLevel?:number;voiceLive?:boolean;selfVoiceStream?:MediaStream};
+type MediaItem={root:HTMLElement;video:HTMLVideoElement;audio:HTMLAudioElement;avatar:HTMLElement;name:HTMLElement;state:HTMLElement;overlay:HTMLElement;overlayToggle:HTMLButtonElement;overlayMove:HTMLButtonElement;voice:VoiceMeter;voiceLevel?:number;selfVoiceStream?:MediaStream};
 const mediaNodes=new Map<string,MediaItem>();
  const people=$('channel-people');
  const stage=$('channel-stage');
@@ -68,6 +69,9 @@ const mediaNodes=new Map<string,MediaItem>();
   const spotColumns=portrait?(small<=2?small:small<=4?2:small<=9?3:4):(small<=2?1:small<=6?2:3);
   people.style.setProperty('--spot-columns',String(Math.max(1,spotColumns)));
   people.style.setProperty('--spot-rows',String(Math.max(1,Math.ceil(small/spotColumns))));
+  const voiceColumns=count<=1?1:count<=4?2:3;
+  people.style.setProperty('--voice-columns',String(voiceColumns));
+  people.style.setProperty('--voice-rows',String(Math.ceil(count/voiceColumns)));
  };
  const stageObserver=new ResizeObserver(stageMetrics);
  stageObserver.observe(people);
@@ -142,8 +146,8 @@ const mediaNodes=new Map<string,MediaItem>();
  const el=(tag:string,text:string)=>{const node=document.createElement(tag);node.textContent=text;return node;};
  function labelButton(id:string,icon:string,key:TextKey,enabled:boolean){const button=controls.button(id);if(button.dataset.text!==o.t(key)){button.innerHTML=icon;button.dataset.text=o.t(key);}button.title=o.t(key);button.setAttribute('aria-label',o.t(key));button.setAttribute('aria-pressed',String(enabled));}
  function renderPeople(mesh:RoomMesh,mode:ChannelMode){
-  const peers=mesh.peerViews(),holder=people;holder.classList.toggle('video-stage',mode==='video');
-  const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video,live:!!mesh.localTracks.audio?.enabled},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video,live:!!p.audio}))];
+  const peers=mesh.peerViews(),holder=people;holder.classList.toggle('video-stage',mode==='video');holder.classList.toggle('voice-stage',mode!=='video');
+  const entries=[{key:'self',label:o.selfName()||o.t('you'),state:media.screenSharing?o.t('channelScreenSharing'):'',connectionState:'self',stream:undefined as MediaStream|undefined,video:!!mesh.localTracks.video,live:!!mesh.localTracks.audio?.enabled,audioKnown:true},...peers.map(p=>({key:p.key,connectionState:p.state,label:o.name(p.key),state:o.t(p.state==='connected'?'meshConnected':p.state==='connecting'?'meshConnecting':p.state==='failed'?'channelConnectionFailed':'meshRetrying')+(p.audio?' · '+o.t('channelTalking').split(' · ')[0]:''),stream:mesh.remoteStream(p.key),video:p.video,live:!!p.audio,audioKnown:p.audio!==undefined}))];
   for(const entry of entries)if(!tileOrder.includes(entry.key))tileOrder.push(entry.key);
   tileOrder=tileOrder.filter(key=>entries.some(entry=>entry.key===key));
   entries.sort((a,b)=>tileOrder.indexOf(a.key)-tileOrder.indexOf(b.key));
@@ -155,7 +159,7 @@ const mediaNodes=new Map<string,MediaItem>();
    const from=tileOrder.indexOf(key),to=tileOrder.indexOf(targetKey);if(from<0||to<0)return;
    tileOrder.splice(to,0,...tileOrder.splice(from,1));render();
   };
-  for(const entry of entries){let item=mediaNodes.get(entry.key);if(!item){const root=document.createElement('article');root.className='channel-person';root.dataset.key=entry.key;const video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;const audio=document.createElement('audio');audio.autoplay=true;audio.muted=entry.key==='self';video.setAttribute('playsinline','');const avatar=document.createElement('div');avatar.className='channel-avatar';const voiceCanvas=document.createElement('canvas');voiceCanvas.className='channel-voice';voiceCanvas.setAttribute('aria-hidden','true');avatar.append(voiceCanvas,el('span',entry.label));const name=el('strong',''),state=el('small','');const overlay=document.createElement('div');overlay.className='channel-overlay-controls';const overlayToggle=document.createElement('button');overlayToggle.type='button';overlayToggle.className='overlay-btn overlay-toggle';const overlayMove=document.createElement('button');overlayMove.type='button';overlayMove.className='overlay-btn overlay-move';overlayMove.innerHTML=moveIcon;overlay.append(overlayToggle,overlayMove);root.append(avatar,video,overlay,audio,name,state);
+  for(const entry of entries){let item=mediaNodes.get(entry.key);if(!item){const root=document.createElement('article');root.className='channel-person';root.dataset.key=entry.key;const video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;const audio=document.createElement('audio');audio.autoplay=true;audio.muted=entry.key==='self';video.setAttribute('playsinline','');const avatar=document.createElement('div');avatar.className='channel-avatar';avatar.append(el('span',entry.label));const name=el('strong',''),state=el('small','');const overlay=document.createElement('div');overlay.className='channel-overlay-controls';const overlayToggle=document.createElement('button');overlayToggle.type='button';overlayToggle.className='overlay-btn overlay-toggle';const overlayMove=document.createElement('button');overlayMove.type='button';overlayMove.className='overlay-btn overlay-move';overlayMove.innerHTML=moveIcon;overlay.append(overlayToggle,overlayMove);root.append(avatar,video,overlay,audio,name,state);
    overlay.addEventListener('dblclick',event=>event.stopPropagation());
    overlay.addEventListener('pointerdown',event=>{
     if(event.pointerType==='mouse'&&event.button!==0)return;
@@ -183,14 +187,13 @@ const mediaNodes=new Map<string,MediaItem>();
    root.onpointermove=event=>moveTile(entry.key,root,event);
    const stopDrag=(event:PointerEvent)=>{if(dragKey!==entry.key)return;dragKey=undefined;delete root.dataset.dragging;try{root.releasePointerCapture(event.pointerId);}catch{}};
    root.onpointerup=stopDrag;root.onpointercancel=stopDrag;
-   holder.append(root);item={root,video,audio,avatar,name,state,overlay,overlayToggle,overlayMove,voice:new VoiceMeter(),voiceCanvas};mediaNodes.set(entry.key,item);}
-   item.root.dataset.state=entry.connectionState;item.root.dataset.focus=String(spotlight&&focusKey===entry.key);item.root.dataset.sharing=String(entry.key==='self'&&media.screenSharing);item.name.textContent=entry.label;item.state.textContent=entry.state;item.video.hidden=mode!=='video'||!entry.video;item.avatar.hidden=mode==='video'&&!!entry.video;
+   holder.append(root);item={root,video,audio,avatar,name,state,overlay,overlayToggle,overlayMove,voice:new VoiceMeter()};mediaNodes.set(entry.key,item);}
+   item.root.dataset.state=entry.connectionState;item.root.dataset.focus=String(spotlight&&focusKey===entry.key);item.root.dataset.sharing=String(entry.key==='self'&&media.screenSharing);item.name.textContent=entry.label;if(mode==='video')item.state.textContent=entry.state;else if(entry.key==='self'?!entry.live:(entry.audioKnown&&!entry.live)){item.state.innerHTML=micOffIcon+'<span>'+o.t('channelMicMuted')+'</span>';item.avatar.dataset.muted='true';}else{item.state.textContent=entry.audioKnown&&entry.connectionState==='connected'?'':entry.state;item.avatar.dataset.muted='false';}item.video.hidden=mode!=='video'||!entry.video;item.avatar.hidden=mode==='video'&&!!entry.video;
    let stream=entry.stream;if(entry.key==='self'){const track=mesh.localTracks.video;const old=item.video.srcObject as MediaStream|null;stream=track?(old?.getVideoTracks()[0]===track?old:new MediaStream([track])):undefined;}
    if(item.video.srcObject!==(stream||null)){item.video.srcObject=stream||null;if(stream)void item.video.play().catch(()=>{});}
    const sound=entry.key==='self'?null:entry.stream||null;if(item.audio.srcObject!==sound){item.audio.srcObject=sound;if(sound)void item.audio.play().catch(()=>{});}
    if(entry.key==='self'){const track=mesh.localTracks.audio;if(item.selfVoiceStream?.getAudioTracks()[0]!==track)item.selfVoiceStream=track?new MediaStream([track]):undefined;}
    item.voice.setStream(item.avatar.hidden?undefined:entry.key==='self'?item.selfVoiceStream:(entry.stream&&entry.stream.getAudioTracks().length?entry.stream:undefined));
-   item.voiceLive=entry.live;
    const overlayLayout=media.overlayLayout;
    const showOverlay=mode==='video'&&entry.key==='self'&&media.screenSharing&&!!overlayLayout;
    item.overlay.hidden=!showOverlay||!media.overlayRect;
@@ -238,39 +241,16 @@ const voiceLoop=()=>{
  for(const item of mediaNodes.values())drawVoice(item);
 };
 function drawVoice(item:MediaItem){
- const canvas=item.voiceCanvas,avatar=item.avatar;
- const clear=()=>{canvas.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height);item.voiceDrawn=false;};
- if(!item.voiceLive||avatar.hidden||!item.voice.ready){
-  if(item.voiceDrawn||avatar.dataset.speaking==='true'){avatar.dataset.speaking='false';avatar.style.setProperty('--voice-level','0');clear();}
-  return;
- }
- const data=item.voice.read();if(!data)return;
- const rect=avatar.getBoundingClientRect(),dpr=Math.min(2,globalThis.devicePixelRatio||1);
- const width=Math.max(1,Math.round(rect.width*dpr)),height=Math.max(1,Math.round(rect.height*dpr));
- if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
- const context=canvas.getContext('2d');if(!context)return;
- let peak=0;for(let i=0;i<data.length;i++)if(data[i]>peak)peak=data[i];
- const level=Math.min(1,peak/255);
- const smooth=item.voiceLevel===undefined?level:Math.max(level,(item.voiceLevel||0)*.86);
+ const avatar=item.avatar;
+ const reset=()=>{if(item.voiceLevel||avatar.dataset.speaking==='true'){item.voiceLevel=0;avatar.dataset.speaking='false';avatar.style.setProperty('--voice-level','0');}};
+ if(avatar.hidden||!item.voice.ready){reset();return;}
+ const level=item.voice.readLevel();if(level===undefined)return;
+ const previous=item.voiceLevel||0;
+ // 说话立刻亮（快攻击），停声缓慢回落（慢释放），亮度跟音量连续变化
+ const smooth=level>previous?previous+(level-previous)*.6:previous*.8+level*.2;
  item.voiceLevel=Math.round(smooth*1000)/1000;
- avatar.style.setProperty('--voice-level',String(smooth));
- if(smooth<=(item.voiceDrawn?0.09:0.14)){
-  if(item.voiceDrawn)clear();
-  avatar.dataset.speaking='false';
-  return;
- }
- avatar.dataset.speaking='true';
- item.voiceDrawn=true;
- const bars=Math.min(40,Math.max(12,Math.round(width/22)));
- const gap=Math.max(1,Math.round(width*.012)),barW=Math.max(1,(width-gap*(bars-1))/bars);
- const midY=height/2,barMax=Math.max(1,Math.round(height*.30));
- context.clearRect(0,0,width,height);
- context.fillStyle='rgba(255,255,255,.95)';context.shadowColor='rgba(255,255,255,.5)';context.shadowBlur=8;
- for(let i=0;i<bars;i++){
-  const value=data[Math.floor(i*(data.length-1)/(bars-1))]/255;
-  const barHeight=Math.max(1.5,value*Math.max(.12,smooth)*barMax);
-  context.fillRect(Math.round(i*(barW+gap)),midY-barHeight/2,barW,barHeight);
- }
+ avatar.style.setProperty('--voice-level',String(item.voiceLevel));
+ avatar.dataset.speaking=String(item.voiceLevel>=(avatar.dataset.speaking==='true'?.06:.1));
 }
 requestAnimationFrame(voiceLoop);
 function render(){
@@ -305,7 +285,7 @@ function render(){
   const work=mesh.relayWork;$('channel-relay-work').hidden=!work||!['requesting','mining','error'].includes(work.status);$('channel-relay-work').querySelector<HTMLElement>('.relay-spinner')!.hidden=work?.status==='error';$('channel-relay-label').textContent=o.t(work?.status==='error'?'channelRelayError':work?.status==='requesting'?'channelRelayPreparing':'channelRelayMining',{seconds:Math.floor((work?.elapsed||0)/1000)});
   const mode=channelMode(mesh.membership.network);$('channel-title').textContent=mesh.membership.network.name;$('channel-mode-label').textContent=o.t(modeKey(mode));page.dataset.mode=mode;
   controls.button('channel-mic').hidden=mode==='walkie';controls.button('channel-camera').hidden=mode!=='video';controls.button('channel-blur').hidden=mode!=='video'||media.screenSharing;controls.button('channel-screen').hidden=mode!=='video';controls.button('channel-chat').hidden=false;controls.button('channel-hold').hidden=mode!=='walkie';
-  const chatVisible=mode==='video'?chatOpen:true;
+  const chatVisible=chatOpen;
   body.dataset.chat=chatVisible?'open':'closed';
   $('channel-messages').hidden=!chatVisible;
   controls.setChatOpen(chatVisible);
